@@ -8,9 +8,18 @@ import "evm-cctp-contracts/src/TokenMessenger.sol";
 
 /**
  * @title TokenMessengerWithMetadata
- * @notice A wrapper for a CCTP TokenMessenger contract that allows users to
- * supply additional metadata when initiating a transfer. This metadata is used
- * to initiate IBC forwards after transferring to Noble (Destination Domain = 4).
+ * @notice A wrapper for a CCTP TokenMessenger contract that collects fees.
+ * 
+ * depositForBurnVanilla allows users to specify any destination domain.
+ * 
+ * The other 4 functions allow users to supply additional metadata when initiating a 
+ * transfer. This metadata is used to initiate IBC forwards after transferring 
+ * to Noble (Destination Domain = 4).  These contracts are:
+ * 
+ * depositForBurn
+ * depositForBurnWithCaller
+ * rawDepositForBurn
+ * rawDepositForBurnWithCaller
  */
 contract TokenMessengerWithMetadata {
     // ============ Events ============
@@ -84,7 +93,8 @@ contract TokenMessengerWithMetadata {
     // ============ External Functions ============
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
-     * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn"
+     * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
+     * Can specify any destination domain.
      * 
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
@@ -92,19 +102,19 @@ contract TokenMessengerWithMetadata {
      * @param burnToken - address of the token being burned on the source chain
      * @param destinationCaller - address allowed to mint on destination chain
      */
-    function depositForBurn(
+    function depositForBurnVanilla(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
         address burnToken,
         bytes32 destinationCaller
     ) external {
+        uint256 fee = calculateFee(amount, destinationDomain);
 
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);
 
         token.approve(address(tokenMessenger), amount-fee);
@@ -125,12 +135,14 @@ contract TokenMessengerWithMetadata {
                 destinationCaller
             );
         }
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
+        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, destinationDomain);
     }
 
     /**
      * @notice Wrapper function for "depositForBurn" that includes metadata.
      * Emits a `DepositForBurnMetadata` event.
+     * Only for minting to Noble (destination domain is hardcoded).
+     *
      * @param channel channel id to be used when ibc forwarding
      * @param destinationRecipient address of recipient once ibc forwarded
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
@@ -166,6 +178,7 @@ contract TokenMessengerWithMetadata {
     /**
      * @notice Wrapper function for "depositForBurn" that includes metadata.
      * Emits a `DepositForBurnMetadata` event.
+     * Only for minting to Noble (destination domain is hardcoded).
      * 
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
@@ -179,11 +192,12 @@ contract TokenMessengerWithMetadata {
         address burnToken,
         bytes memory metadata
     ) public returns (uint64 nonce) {
+        uint256 fee = calculateFee(amount, nobleDomainId);
+
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);  
 
         token.approve(address(tokenMessenger), amount-fee);
@@ -203,6 +217,8 @@ contract TokenMessengerWithMetadata {
     /**
      * @notice Wrapper function for "depositForBurnWithCaller" that includes metadata.
      * Emits a `DepositForBurnMetadata` event.
+     * Only for minting to Noble (destination domain is hardcoded).
+     * 
      * @param channel channel id to be used when ibc forwarding
      * @param destinationRecipient address of recipient once ibc forwarded
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
@@ -242,6 +258,8 @@ contract TokenMessengerWithMetadata {
     /**
      * @notice Wrapper function for "depositForBurnWithCaller" that includes metadata.
      * Emits a `DepositForBurnMetadata` event.
+     * Only for minting to Noble (destination domain is hardcoded).
+     * 
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
      * @param burnToken address of contract to burn deposited tokens, on local domain
@@ -256,11 +274,12 @@ contract TokenMessengerWithMetadata {
         bytes32 destinationCaller,
         bytes memory metadata
     ) public returns (uint64 nonce) {
+        uint256 fee = calculateFee(amount, nobleDomainId);
+
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);
 
         token.approve(address(tokenMessenger), amount-fee);
@@ -278,13 +297,16 @@ contract TokenMessengerWithMetadata {
     }
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
-        Fee memory fee = feeMap[destinationDomain];
-        require(fee.isInitialized, "Fee not found.");
-        return (amount * fee.percFee) / 10000 + fee.flatFee;
+        Fee memory entry = feeMap[destinationDomain];
+        require(entry.isInitialized, "Fee not found");
+        uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
+        require(amount > fee, "burn amount is smaller than fee");
+        return fee;
     }
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
         require(msg.sender == owner, "Only owner can update fees");
+        require(percFee <= 10000, "can't set bips above 10000"); // 100.00%
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
