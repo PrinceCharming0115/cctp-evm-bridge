@@ -6,7 +6,6 @@ import "evm-cctp-contracts/src/messages/BurnMessage.sol";
 import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/test/TestUtils.sol";
 import "../src/TokenMessengerWithMetadata.sol";
-import "../lib/forge-std/src/Test.sol";
 
 contract TokenMessengerWithMetadataTest is Test, TestUtils {
     // ============ Events ============
@@ -18,7 +17,6 @@ contract TokenMessengerWithMetadataTest is Test, TestUtils {
         uint32 source, 
         uint32 dest
     );
-    event Debug(string tag, uint256 amount); // TODO
 
     // ============ State Variables ============
     uint32 public constant LOCAL_DOMAIN = 0;
@@ -113,7 +111,6 @@ contract TokenMessengerWithMetadataTest is Test, TestUtils {
             bytes32(0)
         );
 
-        emit Debug("collector", token.balanceOf(COLLECTOR));
         assertEq(0, token.balanceOf(owner));
         assertEq(20000, token.balanceOf(COLLECTOR));
     }
@@ -217,7 +214,7 @@ contract TokenMessengerWithMetadataTest is Test, TestUtils {
         vm.startPrank(owner);
         token.approve(address(tokenMessengerWrapper), _amount);
 
-        vm.expectEmit();
+        vm.expectEmit(true, true, true, true);
         emit Collect(address(token), _mintRecipientRaw, 20000000, 4000000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         tokenMessengerWrapper.rawDepositForBurn(

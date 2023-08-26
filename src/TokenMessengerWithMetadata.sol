@@ -25,8 +25,6 @@ contract TokenMessengerWithMetadata {
         uint32 source, 
         uint32 dest
     );
-    // TODO
-    event Debug(string tag, uint256 amount);
 
     // ============ State Variables ============
     TokenMessenger public tokenMessenger;
@@ -260,10 +258,7 @@ contract TokenMessengerWithMetadata {
 
         // collect fee
         uint256 fee = calculateFee(amount, domainNumber);
-        emit Debug("amount", amount);
-        emit Debug("fee", fee);
         token.transfer(collector, fee);
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, domain, domainNumber);
 
         nonce = tokenMessenger.depositForBurnWithCaller(
             amount, domainNumber, mintRecipient, burnToken, destinationCaller
