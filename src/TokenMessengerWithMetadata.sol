@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.7.6;
 
-import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "evm-cctp-contracts/src/messages/Message.sol";
+import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/src/TokenMessenger.sol";
 
 /**
@@ -30,12 +30,15 @@ contract TokenMessengerWithMetadata {
     TokenMessenger public tokenMessenger;
     MessageTransmitter public immutable messageTransmitter;
 
-    uint32 public immutable domainNumber;
+    // the domain id this contract is deployed on
+    uint32 public immutable currentDomainId;
+    // Noble's domain number
+    uint32 public immutable nobleDomainId;
+    // Address of Noble's message recipient on destination chain as bytes32
     bytes32 public immutable domainRecipient;
-
-    // the address that can update parameters
+    // address which sets fees and collector
     address public owner;
-    // the address where fees are sent
+    // address which fees are sent to
     address payable public collector; 
 
     struct Fee {
@@ -47,24 +50,22 @@ contract TokenMessengerWithMetadata {
         bool isInitialized;
     }
     
-    // mapping of destination domain -> fee
+    // destination domain id -> fee
     mapping(uint32 => Fee) public feeMap;
-
-    // the domain id this contract is deployed on
-    uint32 public immutable domain;
 
     // ============ Constructor ============
     /**
-     * @param _tokenMessenger Token messenger address
-     * @param _domainNumber Noble's domain number
+     * @param _tokenMessenger TokenMessenger address
+     * @param _nobleDomainId Noble's domain number
      * @param _domainRecipient Noble's domain recipient
-     * @param _domain The domain id this contract is deployed on
+     * @param _currentDomainId The domain id this contract is deployed on
+     * @param _collector address which fees are sent to
      */
     constructor(
         address _tokenMessenger,
-        uint32 _domainNumber,
+        uint32 _nobleDomainId,
         bytes32 _domainRecipient,
-        uint32 _domain,
+        uint32 _currentDomainId,
         address payable _collector
     ) {
         require(_tokenMessenger != address(0), "TokenMessenger not set");
@@ -73,16 +74,16 @@ contract TokenMessengerWithMetadata {
             address(tokenMessenger.localMessageTransmitter())
         );
 
-        domainNumber = _domainNumber;
+        nobleDomainId = _nobleDomainId;
         domainRecipient = _domainRecipient;
-        domain = _domain;
+        currentDomainId = _currentDomainId;
         collector = _collector;
         owner = msg.sender;
     }
 
     // ============ External Functions ============
     /**
-     * @notice Wrapper function.
+     * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn"
      * 
      * @param amount - the burn amount
@@ -101,11 +102,12 @@ contract TokenMessengerWithMetadata {
 
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
-        token.approve(address(tokenMessenger), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, domainNumber);
+        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);
+
+        token.approve(address(tokenMessenger), amount-fee);
 
         if (destinationCaller == bytes32(0)) {
             tokenMessenger.depositForBurn(
@@ -123,7 +125,7 @@ contract TokenMessengerWithMetadata {
                 destinationCaller
             );
         }
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, domain, domainNumber);
+        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
     }
 
     /**
@@ -164,6 +166,7 @@ contract TokenMessengerWithMetadata {
     /**
      * @notice Wrapper function for "depositForBurn" that includes metadata.
      * Emits a `DepositForBurnMetadata` event.
+     * 
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
      * @param burnToken address of contract to burn deposited tokens, on local domain
@@ -178,21 +181,22 @@ contract TokenMessengerWithMetadata {
     ) public returns (uint64 nonce) {
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
-        token.approve(address(tokenMessenger), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, domainNumber);
+        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);  
 
+        token.approve(address(tokenMessenger), amount-fee);
+
         nonce = tokenMessenger.depositForBurn(
-            amount-fee, domainNumber, mintRecipient, burnToken
+            amount-fee, nobleDomainId, mintRecipient, burnToken
         );
 
         uint64 metadataNonce = messageTransmitter.sendMessage(
-            domainNumber, domainRecipient, metadata
+            nobleDomainId, domainRecipient, metadata
         );
 
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, domain, domainNumber);
+        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
         emit DepositForBurnMetadata(nonce, metadataNonce, metadata);
     }
 
@@ -254,21 +258,22 @@ contract TokenMessengerWithMetadata {
     ) public returns (uint64 nonce) {
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
-        token.approve(address(tokenMessenger), amount);
 
         // collect fee
-        uint256 fee = calculateFee(amount, domainNumber);
+        uint256 fee = calculateFee(amount, nobleDomainId);
         token.transfer(collector, fee);
 
+        token.approve(address(tokenMessenger), amount-fee);
+
         nonce = tokenMessenger.depositForBurnWithCaller(
-            amount, domainNumber, mintRecipient, burnToken, destinationCaller
+            amount, nobleDomainId, mintRecipient, burnToken, destinationCaller
         );
 
         uint64 metadataNonce = messageTransmitter.sendMessageWithCaller(
-            domainNumber, domainRecipient, destinationCaller, metadata
+            nobleDomainId, domainRecipient, destinationCaller, metadata
         );
 
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, domain, domainNumber);
+        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
         emit DepositForBurnMetadata(nonce, metadataNonce, metadata);
     }
 
@@ -279,7 +284,7 @@ contract TokenMessengerWithMetadata {
     }
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
-        require(msg.sender == owner, "Only the owner can update fees");
+        require(msg.sender == owner, "Only owner can update fees");
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
