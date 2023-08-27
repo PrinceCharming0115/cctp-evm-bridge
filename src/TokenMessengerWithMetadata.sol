@@ -94,7 +94,7 @@ contract TokenMessengerWithMetadata {
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain.
+     * Can specify any destination domain.  
      * 
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
