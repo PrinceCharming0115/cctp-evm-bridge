@@ -24,7 +24,7 @@
 
 <h2>Channel ID -> Cosmos chain mappings</h2>
 
-https://github.com/cosmos/chain-registry/blob/master/noble/assetlist.json\
+https://github.com/cosmos/chain-registry/blob/master/noble/assetlist.json \
 https://github.com/cosmos/chain-registry/blob/master/testnets/nobletestnet/assetlist.json
 
 | Channel ID         | Chain |
