@@ -33,10 +33,10 @@ https://github.com/cosmos/chain-registry/blob/master/testnets/nobletestnet/asset
 
 <h2>Request payloads</h2>
 
-Before any burns, the user must approve the transfer
+Before any burns, the user must approve the transfer.  For reference we are using ~300k gas (I think).
 ```
 const approveTx = await usdcEthContract.methods.approve(
-    ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS, 
+    ETH_TOKEN_MESSENGER_WITH_METADATA_WRAPPER_CONTRACT_ADDRESS, 
     amount).send({gas: approveTxGas})
 ```
 
