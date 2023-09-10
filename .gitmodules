@@ -1,3 +1,6 @@
 [submodule "lib/evm-cctp-contracts"]
 	path = lib/evm-cctp-contracts
 	url = https://github.com/circlefin/evm-cctp-contracts
+[submodule "lib/cctp-contracts"]
+	path = lib/cctp-contracts
+	url = https://github.com/noble-assets/cctp-contracts
