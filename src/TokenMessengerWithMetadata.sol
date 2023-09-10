@@ -2,7 +2,6 @@
 pragma solidity 0.7.6;
 
 import "evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
-import "evm-cctp-contracts/src/messages/Message.sol";
 import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/src/TokenMessenger.sol";
 
@@ -29,8 +28,8 @@ contract TokenMessengerWithMetadata {
     event Collect(
         address indexed burnToken, 
         bytes32 mintRecipient, 
-        uint256 amountBurned, 
-        uint256 fee,
+        uint256 indexed amountBurned, 
+        uint256 indexed fee,
         uint32 source, 
         uint32 dest
     );
@@ -162,7 +161,7 @@ contract TokenMessengerWithMetadata {
         bytes calldata memo
     ) external returns (uint64 nonce) {
         uint64 reservedNonce = messageTransmitter.nextAvailableNonce();
-        bytes32 sender = Message.addressToBytes32(msg.sender);
+        bytes32 sender = bytes32(uint256(uint160(msg.sender)));
         bytes memory metadata = abi.encodePacked(
             reservedNonce,
             sender,
@@ -240,7 +239,7 @@ contract TokenMessengerWithMetadata {
         bytes calldata memo
     ) external returns (uint64 nonce) {
         uint64 reservedNonce = messageTransmitter.nextAvailableNonce();
-        bytes32 sender = Message.addressToBytes32(msg.sender);
+        bytes32 sender = bytes32(uint256(uint160(msg.sender)));
         bytes memory metadata = abi.encodePacked(
             reservedNonce,
             sender,
@@ -305,18 +304,18 @@ contract TokenMessengerWithMetadata {
     }
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
-        require(msg.sender == owner, "Only owner can update fees");
+        require(msg.sender == owner, "unauthorized");
         require(percFee <= 10000, "can't set bips above 10000"); // 100.00%
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
     function updateOwner(address newOwner) external {
-        require(msg.sender == owner, "Only owner can update owner");
+        require(msg.sender == owner, "unauthorized");
         owner = newOwner;
     }
 
     function updateCollector(address payable newCollector) external {
-        require(msg.sender == owner, "Only owner can update collector");
+        require(msg.sender == owner, "unauthorized");
         collector = newCollector;
     }
 }
