@@ -3,9 +3,10 @@ pragma solidity 0.7.6;
 
 import "evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "evm-cctp-contracts/src/TokenMessenger.sol";
+import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 
 /**
- * @title TokenMessengerWithMetadata
+ * @title TokenMessengerWithMetadataWrapper
  * @notice A wrapper for a CCTP TokenMessenger contract that collects fees.
  * 
  * depositForBurnVanilla allows users to specify any destination domain.
@@ -19,7 +20,7 @@ import "evm-cctp-contracts/src/TokenMessenger.sol";
  * rawDepositForBurn
  * rawDepositForBurnWithCaller
  */
-contract TokenMessengerWithMetadata {
+contract TokenMessengerWithMetadataWrapper {
     // ============ Events ============
     event DepositForBurnMetadata(
         uint32 indexed currentDomainId, uint64 indexed nonce
@@ -137,7 +138,6 @@ contract TokenMessengerWithMetadata {
      * @param mintRecipient address of mint recipient on destination domain
      * @param burnToken address of contract to burn deposited tokens, on local domain
      * @param memo arbitrary memo to be included when ibc forwarding
-     * @return nonce unique nonce reserved by message
      */
     function depositForBurnNoble(
         uint64 channel,
@@ -155,7 +155,7 @@ contract TokenMessengerWithMetadata {
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
         token.transfer(collector, fee);  
-        token.approve(address(tokenMessenger), amount-fee);
+        token.approve(address(tokenMessengerWithMetadata), amount-fee);
 
         uint64 nonce;
         if (destinationCaller == bytes32(0)) {
