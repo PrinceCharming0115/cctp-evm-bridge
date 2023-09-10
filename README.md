@@ -6,7 +6,7 @@
 
 | Chain              | Domain Id | Address |
 | :----------------- | :-------- | -------: |
-| Ethereum Goerli    |   0       | 0x1234 |
+| Ethereum Goerli    |   0       | [0xd365CFf20b5f31132F2302E477e71F663bB4A2f7](https://goerli.etherscan.io/address/0xd365CFf20b5f31132F2302E477e71F663bB4A2f7) |
 | Avalanche          |   1       |  |
 | OP Goerli          |   2       |  |
 | Arbitrum Goerli    |   3       |  |
