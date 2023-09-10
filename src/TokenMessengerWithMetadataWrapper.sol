@@ -1,30 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.7.6;
 
-import "evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
-import "evm-cctp-contracts/src/TokenMessenger.sol";
+import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
+import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
 import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
- * @notice A wrapper for a CCTP TokenMessenger contract that collects fees.
- * 
- * depositForBurnVanilla allows users to specify any destination domain.
- * 
- * The other 4 functions allow users to supply additional metadata when initiating a 
- * transfer. This metadata is used to initiate IBC forwards after transferring 
- * to Noble (Destination Domain = 4).  These contracts are:
- * 
- * depositForBurn
- * depositForBurnWithCaller
- * rawDepositForBurn
- * rawDepositForBurnWithCaller
+ * @notice A wrapper for a CCTP TokenMessengerWithMetatdata contract that collects fees.
+ *  this contract -> TokenMessengerWithMetadata -> TokenMessenger 
+ *
+ * depositForBurn allows users to specify any destination domain.
+ * depositForBurnNoble is for minting and forwarding from Noble.  
+ *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
  */
 contract TokenMessengerWithMetadataWrapper {
     // ============ Events ============
-    event DepositForBurnMetadata(
-        uint32 indexed currentDomainId, uint64 indexed nonce
-    );
     event Collect(
         address indexed burnToken, 
         bytes32 mintRecipient, 
@@ -128,7 +119,6 @@ contract TokenMessengerWithMetadataWrapper {
 
     /**
      * @notice Wrapper function for "depositForBurn" that includes metadata.
-     * Emits a `DepositForBurnMetadata` event.
      * Only for minting to Noble (destination domain is hardcoded).
      *
      * @param channel channel id to be used when ibc forwarding
@@ -182,7 +172,6 @@ contract TokenMessengerWithMetadataWrapper {
         }
 
         emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
-        emit DepositForBurnMetadata(currentDomainId, nonce);
     }
 
 
@@ -190,13 +179,13 @@ contract TokenMessengerWithMetadataWrapper {
         Fee memory entry = feeMap[destinationDomain];
         require(entry.isInitialized, "Fee not found");
         uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
-        require(amount > fee, "burn amount is smaller than fee");
+        require(amount > fee, "burn amount < fee");
         return fee;
     }
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
         require(msg.sender == owner, "unauthorized");
-        require(percFee <= 10000, "can't set bips above 10000"); // 100.00%
+        require(percFee <= 10000, "can't set bips > 10k"); // 100.00%
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 

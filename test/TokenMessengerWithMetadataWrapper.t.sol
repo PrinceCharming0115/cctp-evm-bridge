@@ -119,7 +119,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         vm.prank(owner);
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
-        vm.expectRevert("burn amount is smaller than fee");
+        vm.expectRevert("burn amount < fee");
 
         vm.prank(owner);
         tokenMessengerWithMetadataWrapper.depositForBurn(
@@ -366,7 +366,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     }
 
     function testSetFeeTooHigh() public {
-        vm.expectRevert("can't set bips above 10000");
+        vm.expectRevert("can't set bips > 10k");
         tokenMessengerWithMetadataWrapper.setFee(3, 10001, 15); // 100.01%
     }
 
