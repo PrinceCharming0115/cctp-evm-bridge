@@ -2,7 +2,6 @@
 pragma solidity 0.7.6;
 
 import "evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
-import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/src/TokenMessenger.sol";
 
 /**
@@ -23,7 +22,7 @@ import "evm-cctp-contracts/src/TokenMessenger.sol";
 contract TokenMessengerWithMetadata {
     // ============ Events ============
     event DepositForBurnMetadata(
-        uint64 indexed nonce, uint64 indexed metadataNonce, bytes metadata
+        uint32 indexed currentDomainId, uint64 indexed nonce
     );
     event Collect(
         address indexed burnToken, 
@@ -36,14 +35,10 @@ contract TokenMessengerWithMetadata {
 
     // ============ State Variables ============
     TokenMessenger public tokenMessenger;
-    MessageTransmitter public immutable messageTransmitter;
+    TokenMessengerWithMetadata public tokenMessengerWithMetadata;
 
     // the domain id this contract is deployed on
     uint32 public immutable currentDomainId;
-    // Noble's domain number
-    uint32 public immutable nobleDomainId;
-    // Address of Noble's message recipient on destination chain as bytes32
-    bytes32 public immutable domainRecipient;
     // address which sets fees and collector
     address public owner;
     // address which fees are sent to
@@ -64,26 +59,22 @@ contract TokenMessengerWithMetadata {
     // ============ Constructor ============
     /**
      * @param _tokenMessenger TokenMessenger address
-     * @param _nobleDomainId Noble's domain number
-     * @param _domainRecipient Noble's domain recipient
+     * @param _tokenMessengerWithMetadata TokenMessengerWithMetadata address
      * @param _currentDomainId The domain id this contract is deployed on
      * @param _collector address which fees are sent to
      */
     constructor(
         address _tokenMessenger,
-        uint32 _nobleDomainId,
-        bytes32 _domainRecipient,
+        address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
         address payable _collector
     ) {
         require(_tokenMessenger != address(0), "TokenMessenger not set");
         tokenMessenger = TokenMessenger(_tokenMessenger);
-        messageTransmitter = MessageTransmitter(
-            address(tokenMessenger.localMessageTransmitter())
-        );
 
-        nobleDomainId = _nobleDomainId;
-        domainRecipient = _domainRecipient;
+        require(_tokenMessengerWithMetadata != address(0), "TMWithMetadata not set");
+        tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
+
         currentDomainId = _currentDomainId;
         collector = _collector;
         owner = msg.sender;
@@ -101,21 +92,18 @@ contract TokenMessengerWithMetadata {
      * @param burnToken - address of the token being burned on the source chain
      * @param destinationCaller - address allowed to mint on destination chain
      */
-    function depositForBurnVanilla(
+    function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
         address burnToken,
         bytes32 destinationCaller
     ) external {
+        // collect fee
         uint256 fee = calculateFee(amount, destinationDomain);
-
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
-
-        // collect fee
         token.transfer(collector, fee);
-
         token.approve(address(tokenMessenger), amount-fee);
 
         if (destinationCaller == bytes32(0)) {
@@ -143,157 +131,60 @@ contract TokenMessengerWithMetadata {
      * Only for minting to Noble (destination domain is hardcoded).
      *
      * @param channel channel id to be used when ibc forwarding
-     * @param destinationRecipient address of recipient once ibc forwarded
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
+     * @param destinationRecipient address of recipient once ibc forwarded
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
      * @param burnToken address of contract to burn deposited tokens, on local domain
      * @param memo arbitrary memo to be included when ibc forwarding
      * @return nonce unique nonce reserved by message
      */
-    function depositForBurn(
+    function depositForBurnNoble(
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destinationRecipient,
         uint256 amount,
         bytes32 mintRecipient,
         address burnToken,
+        bytes32 destinationCaller,
         bytes calldata memo
-    ) external returns (uint64 nonce) {
-        uint64 reservedNonce = messageTransmitter.nextAvailableNonce();
-        bytes32 sender = bytes32(uint256(uint160(msg.sender)));
-        bytes memory metadata = abi.encodePacked(
-            reservedNonce,
-            sender,
-            channel,
-            destinationBech32Prefix,
-            destinationRecipient,
-            memo
-        );
-
-        return rawDepositForBurn(amount, mintRecipient, burnToken, metadata);
-    }
-
-    /**
-     * @notice Wrapper function for "depositForBurn" that includes metadata.
-     * Emits a `DepositForBurnMetadata` event.
-     * Only for minting to Noble (destination domain is hardcoded).
-     * 
-     * @param amount amount of tokens to burn
-     * @param mintRecipient address of mint recipient on destination domain
-     * @param burnToken address of contract to burn deposited tokens, on local domain
-     * @param metadata custom metadata to be included with transfer
-     * @return nonce unique nonce reserved by message
-     */
-    function rawDepositForBurn(
-        uint256 amount,
-        bytes32 mintRecipient,
-        address burnToken,
-        bytes memory metadata
-    ) public returns (uint64 nonce) {
-        uint256 fee = calculateFee(amount, nobleDomainId);
-
-        IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, address(this), amount);
+    ) external {
 
         // collect fee
+        uint256 fee = calculateFee(amount, uint32(4)); // noble domain id is 4
+        IMintBurnToken token = IMintBurnToken(burnToken);
+        token.transferFrom(msg.sender, address(this), amount);
         token.transfer(collector, fee);  
-
         token.approve(address(tokenMessenger), amount-fee);
 
-        nonce = tokenMessenger.depositForBurn(
-            amount-fee, nobleDomainId, mintRecipient, burnToken
-        );
+        uint64 nonce;
+        if (destinationCaller == bytes32(0)) {
+            nonce = tokenMessengerWithMetadata.depositForBurn(
+                channel,
+                destinationBech32Prefix,
+                destinationRecipient,
+                amount-fee,
+                mintRecipient,
+                burnToken,
+                memo
+            );
+        } else {
+            nonce = tokenMessengerWithMetadata.depositForBurnWithCaller(
+                channel,
+                destinationBech32Prefix,
+                destinationRecipient,
+                amount-fee,
+                mintRecipient,
+                burnToken,
+                destinationCaller,
+                memo
+            );
+        }
 
-        uint64 metadataNonce = messageTransmitter.sendMessage(
-            nobleDomainId, domainRecipient, metadata
-        );
-
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
-        emit DepositForBurnMetadata(nonce, metadataNonce, metadata);
+        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
+        emit DepositForBurnMetadata(currentDomainId, nonce);
     }
 
-    /**
-     * @notice Wrapper function for "depositForBurnWithCaller" that includes metadata.
-     * Emits a `DepositForBurnMetadata` event.
-     * Only for minting to Noble (destination domain is hardcoded).
-     * 
-     * @param channel channel id to be used when ibc forwarding
-     * @param destinationRecipient address of recipient once ibc forwarded
-     * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
-     * @param amount amount of tokens to burn
-     * @param mintRecipient address of mint recipient on destination domain
-     * @param burnToken address of contract to burn deposited tokens, on local domain
-     * @param destinationCaller caller on the destination domain, as bytes32
-     * @param memo arbitrary memo to be included when ibc forwarding
-     * @return nonce unique nonce reserved by message
-     */
-    function depositForBurnWithCaller(
-        uint64 channel,
-        bytes32 destinationBech32Prefix,
-        bytes32 destinationRecipient,
-        uint256 amount,
-        bytes32 mintRecipient,
-        address burnToken,
-        bytes32 destinationCaller,
-        bytes calldata memo
-    ) external returns (uint64 nonce) {
-        uint64 reservedNonce = messageTransmitter.nextAvailableNonce();
-        bytes32 sender = bytes32(uint256(uint160(msg.sender)));
-        bytes memory metadata = abi.encodePacked(
-            reservedNonce,
-            sender,
-            channel,
-            destinationBech32Prefix,
-            destinationRecipient,
-            memo
-        );
-
-        return rawDepositForBurnWithCaller(
-            amount, mintRecipient, burnToken, destinationCaller, metadata
-        );
-    }
-
-    /**
-     * @notice Wrapper function for "depositForBurnWithCaller" that includes metadata.
-     * Emits a `DepositForBurnMetadata` event.
-     * Only for minting to Noble (destination domain is hardcoded).
-     * 
-     * @param amount amount of tokens to burn
-     * @param mintRecipient address of mint recipient on destination domain
-     * @param burnToken address of contract to burn deposited tokens, on local domain
-     * @param destinationCaller caller on the destination domain, as bytes32
-     * @param metadata custom metadata to be included with transfer
-     * @return nonce unique nonce reserved by message
-     */
-    function rawDepositForBurnWithCaller(
-        uint256 amount,
-        bytes32 mintRecipient,
-        address burnToken,
-        bytes32 destinationCaller,
-        bytes memory metadata
-    ) public returns (uint64 nonce) {
-        uint256 fee = calculateFee(amount, nobleDomainId);
-
-        IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, address(this), amount);
-
-        // collect fee
-        token.transfer(collector, fee);
-
-        token.approve(address(tokenMessenger), amount-fee);
-
-        nonce = tokenMessenger.depositForBurnWithCaller(
-            amount, nobleDomainId, mintRecipient, burnToken, destinationCaller
-        );
-
-        uint64 metadataNonce = messageTransmitter.sendMessageWithCaller(
-            nobleDomainId, domainRecipient, destinationCaller, metadata
-        );
-
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, nobleDomainId);
-        emit DepositForBurnMetadata(nonce, metadataNonce, metadata);
-    }
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
         Fee memory entry = feeMap[destinationDomain];
