@@ -35,6 +35,8 @@ contract TokenMessengerWithMetadataWrapper {
     address public owner;
     // address which fees are sent to
     address payable public collector; 
+    // address which can update fees
+    address public feeUpdater;
 
     struct Fee {
         // percentage fee in bips
@@ -59,7 +61,8 @@ contract TokenMessengerWithMetadataWrapper {
         address _tokenMessenger,
         address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
-        address payable _collector
+        address payable _collector,
+        address _feeUpdater
     ) {
         require(_tokenMessenger != address(0), "TokenMessenger not set");
         tokenMessenger = TokenMessenger(_tokenMessenger);
@@ -69,6 +72,7 @@ contract TokenMessengerWithMetadataWrapper {
 
         currentDomainId = _currentDomainId;
         collector = _collector;
+        feeUpdater = _feeUpdater;
         owner = msg.sender;
     }
 
@@ -184,7 +188,7 @@ contract TokenMessengerWithMetadataWrapper {
     }
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
-        require(msg.sender == owner, "unauthorized");
+        require(msg.sender == feeUpdater, "unauthorized");
         require(percFee <= 10000, "can't set bips > 10k"); // 100.00%
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
@@ -197,5 +201,10 @@ contract TokenMessengerWithMetadataWrapper {
     function updateCollector(address payable newCollector) external {
         require(msg.sender == owner, "unauthorized");
         collector = newCollector;
+    }
+
+    function updateFeeUpdater(address payable newFeeUpdater) external {
+        require(msg.sender == owner, "unauthorized");
+        feeUpdater = newFeeUpdater;
     }
 }

@@ -29,6 +29,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         0x00000000000000000000000057d4eaf1091577a6b7d121202afbd2808134f117;
 
     address payable public constant COLLECTOR = address(0x1);
+    address public constant FEE_UPDATER = address(0x2);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;
     MockMintBurnToken public token = new MockMintBurnToken();
@@ -60,9 +61,11 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(tokenMessenger),
             address(tokenMessengerWithMetadata),
             LOCAL_DOMAIN,
-            COLLECTOR
+            COLLECTOR,
+            FEE_UPDATER
         );
 
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
 
         tokenMessenger.addLocalMinter(address(tokenMinter));
@@ -89,7 +92,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(tokenMessenger),
             address(0),
             LOCAL_DOMAIN,
-            COLLECTOR
+            COLLECTOR,
+            FEE_UPDATER
         );
     }
 
@@ -100,7 +104,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(0),
             address(tokenMessengerWithMetadata),
             LOCAL_DOMAIN,
-            COLLECTOR
+            COLLECTOR,
+            FEE_UPDATER
         );
     }
 
@@ -114,6 +119,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 3);
 
         vm.prank(owner);
@@ -142,6 +148,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
 
         vm.prank(owner);
@@ -174,6 +181,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
 
         vm.prank(owner);
@@ -206,6 +214,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 2000000); // $2
 
         vm.prank(owner);
@@ -238,6 +247,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 4000000); // $4
 
         vm.startPrank(owner);
@@ -270,6 +280,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
 
         vm.prank(owner);
@@ -302,6 +313,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 2000000); // 10 bips or 0.1% + $2
 
         vm.prank(owner);
@@ -334,6 +346,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
 
         vm.prank(owner);
@@ -362,11 +375,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         uint256 _percFee
     ) public {
         _percFee = bound(_percFee, 1, 10000); // 100%
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, _percFee, 15);
     }
 
     function testSetFeeTooHigh() public {
         vm.expectRevert("can't set bips > 10k");
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, 10001, 15); // 100.01%
     }
 
@@ -381,6 +396,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
 
         token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 3);
 
         tokenMessenger.addRemoteTokenMessenger(
