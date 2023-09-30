@@ -151,9 +151,8 @@ contract TokenMessengerWithMetadataWrapper {
         token.transfer(collector, fee);  
         token.approve(address(tokenMessengerWithMetadata), amount-fee);
 
-        uint64 nonce;
         if (destinationCaller == bytes32(0)) {
-            nonce = tokenMessengerWithMetadata.depositForBurn(
+            tokenMessengerWithMetadata.depositForBurn(
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
@@ -163,7 +162,7 @@ contract TokenMessengerWithMetadataWrapper {
                 memo
             );
         } else {
-            nonce = tokenMessengerWithMetadata.depositForBurnWithCaller(
+            tokenMessengerWithMetadata.depositForBurnWithCaller(
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
@@ -181,7 +180,9 @@ contract TokenMessengerWithMetadataWrapper {
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
         Fee memory entry = feeMap[destinationDomain];
-        require(entry.isInitialized, "Fee not found");
+        if(!entry.isInitialized) {
+            return 0;
+        }
         uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
         require(amount > fee, "burn amount < fee");
         return fee;
@@ -203,7 +204,7 @@ contract TokenMessengerWithMetadataWrapper {
         collector = newCollector;
     }
 
-    function updateFeeUpdater(address payable newFeeUpdater) external {
+    function updateFeeUpdater(address newFeeUpdater) external {
         require(msg.sender == owner, "unauthorized");
         feeUpdater = newFeeUpdater;
     }
