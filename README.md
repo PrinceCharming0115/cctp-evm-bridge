@@ -53,11 +53,11 @@ depositForBurn(
 
 DepositForBurnNoble is minting+forwarding on Noble.  IBC forwarding metadata can be included in the payload.
 ```
-depositForBurn(
+depositForBurnNoble(
     uint64 channel,                   // channel id to be used when ibc forwarding
     bytes32 destinationBech32Prefix,  // bech32 prefix used for address encoding once ibc forwarded
     bytes32 destinationRecipient,     // address of the recipient after the IBC forward
-    uint256 amount,                   // all usdc has 6 decimals, so $1 = 10^6 usdc
+    uint256 amount,                   // all usdc has 6 decimals
     bytes32 mintRecipient,            // address receiving minted tokens on destination domain
     address burnToken,                // address of the token being burned on the source chain
     bytes32 destinationCaller,        // (optional) address allowed to mint on destination domain
