@@ -177,12 +177,19 @@ contract TokenMessengerWithMetadataWrapper {
         emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
     }
 
+    function updateTokenMessenger(address newTokenMessenger) external {
+        require(msg.sender == owner, "unauthorized");
+        tokenMessenger = TokenMessenger(newTokenMessenger);
+    }
+
+    function updateTokenMessengerWithMetadata(address newTokenMessenger) external {
+        require(msg.sender == owner, "unauthorized");
+        tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
+    }
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
         Fee memory entry = feeMap[destinationDomain];
-        if(!entry.isInitialized) {
-            return 0;
-        }
+        require(entry.isInitialized, "Fee not found");
         uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
         require(amount > fee, "burn amount < fee");
         return fee;
@@ -190,7 +197,7 @@ contract TokenMessengerWithMetadataWrapper {
 
     function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
         require(msg.sender == feeUpdater, "unauthorized");
-        require(percFee <= 10000, "can't set bips > 10k"); // 100.00%
+        require(percFee <= 100, "can't set bips > 100"); // 1%
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
