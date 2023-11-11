@@ -25,6 +25,26 @@ contract TokenMessengerWithMetadataWrapper {
         uint32 dest
     );
 
+    event FastTransfer(
+        address token,
+        bytes32 indexed mintRecipient,
+        uint256 amount,
+        uint32 indexed source,
+        uint32 indexed dest
+    );
+
+    event FastTransferIBC(
+        address token,
+        bytes32 indexed mintRecipient,
+        uint256 amount,
+        uint32 indexed source,
+        uint32 indexed dest,
+        uint64 channel,
+        bytes32 destinationBech32Prefix,
+        bytes32 destRecipient,
+        bytes memo
+    );
+
     // ============ State Variables ============
     TokenMessenger public tokenMessenger;
     TokenMessengerWithMetadata public tokenMessengerWithMetadata;
@@ -37,6 +57,11 @@ contract TokenMessengerWithMetadataWrapper {
     address payable public collector; 
     // address which can update fees
     address public feeUpdater;
+    // current contract address (gas optimiation)
+    address public immutable contractAddress;
+
+    // fast transfer - allowed erc20 tokens
+    mapping(address => bool) public allowedTokens;    
 
     struct Fee {
         // percentage fee in bips
@@ -70,6 +95,8 @@ contract TokenMessengerWithMetadataWrapper {
         require(_tokenMessengerWithMetadata != address(0), "TMWithMetadata not set");
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
 
+        contractAddress = address(this);
+
         currentDomainId = _currentDomainId;
         collector = _collector;
         feeUpdater = _feeUpdater;
@@ -98,7 +125,7 @@ contract TokenMessengerWithMetadataWrapper {
         // collect fee
         uint256 fee = calculateFee(amount, destinationDomain);
         IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, contractAddress, amount);
         token.transfer(collector, fee);
         token.approve(address(tokenMessenger), amount-fee);
 
@@ -147,7 +174,7 @@ contract TokenMessengerWithMetadataWrapper {
         // collect fee
         uint256 fee = calculateFee(amount, uint32(4)); // noble domain id is 4
         IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, contractAddress, amount);
         token.transfer(collector, fee);  
         token.approve(address(tokenMessengerWithMetadata), amount-fee);
 
@@ -175,6 +202,81 @@ contract TokenMessengerWithMetadataWrapper {
         }
 
         emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
+    }
+
+    /**
+     * @notice For fast, custodial transfers.  Fees are collected on the backend.
+     *
+     * @param amount amount of tokens to burn
+     * @param destinationDomain domain id the funds will be received on
+     * @param recipient address of mint recipient on destination domain
+     * @param token address of contract to burn deposited tokens, on local domain
+     */
+    function fastTransfer(
+        uint256 amount,
+        uint32 destinationDomain,
+        bytes32 recipient,
+        address token
+    ) external {
+        // only allow certain tokens for this domain
+        require(allowedTokens[token] == true, "Token is not supported");
+        
+        // transfer to collector
+        IMintBurnToken mintBurntoken = IMintBurnToken(token);
+        mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
+        mintBurntoken.transfer(collector, amount);  
+
+        // emit event
+        emit FastTransfer(
+            token,
+            recipient,
+            amount,
+            currentDomainId,
+            destinationDomain
+        );
+    }
+
+    /**
+     * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the backend.
+     * Only for minting to Noble (destination domain is hardcoded)
+     * 
+     * @param amount amount of tokens to burn
+     * @param recipient address of fallback mint recipient on Noble
+     * @param token address of contract to burn deposited tokens, on local domain
+     * @param channel channel id to be used when ibc forwarding
+     * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
+     * @param destinationRecipient address of recipient once ibc forwarded
+     * @param memo arbitrary memo to be included when ibc forwarding
+     */
+    function fastTransferIBC(
+        uint256 amount,
+        bytes32 recipient,
+        address token,
+        uint64 channel,
+        bytes32 destinationBech32Prefix,
+        bytes32 destinationRecipient,
+        bytes calldata memo
+    ) external {
+        // only allow certain tokens for this domain
+        require(allowedTokens[token] == true, "Token is not supported");
+        
+        // transfer to collector
+        IMintBurnToken mintBurntoken = IMintBurnToken(token);
+        mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
+        mintBurntoken.transfer(collector, amount);  
+
+        // emit event
+        emit FastTransferIBC(
+            token,
+            recipient,
+            amount,
+            currentDomainId,
+            4,
+            channel,
+            destinationBech32Prefix,
+            destinationRecipient,
+            memo
+        );
     }
 
     function updateTokenMessenger(address newTokenMessenger) external {
@@ -214,5 +316,15 @@ contract TokenMessengerWithMetadataWrapper {
     function updateFeeUpdater(address newFeeUpdater) external {
         require(msg.sender == owner, "unauthorized");
         feeUpdater = newFeeUpdater;
+    }
+
+    function allowAddress(address newAllowedAddress) external {
+        require(msg.sender == owner, "unauthorized");
+        allowedTokens[newAllowedAddress] = true;
+    }
+
+    function disallowAddress(address newDisallowedAddress) external {
+        require(msg.sender == owner, "unauthorized");
+        allowedTokens[newDisallowedAddress] = false;
     }
 }

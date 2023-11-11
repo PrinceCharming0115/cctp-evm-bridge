@@ -1,36 +1,5 @@
 # cctp-money-bridge-contracts
 
-<h2>Contract addresses</h2>
-
-<h3>Testnets</h3>
-
-| Chain              | Domain Id | Address |
-| :----------------- | :-------- | :------ |
-| Ethereum Goerli    |   0       | [0xd365CFf20b5f31132F2302E477e71F663bB4A2f7](https://goerli.etherscan.io/address/0xd365CFf20b5f31132F2302E477e71F663bB4A2f7) |
-| Avalanche          |   1       |  |
-| OP Goerli          |   2       |  |
-| Arbitrum Goerli    |   3       |  |
-| Noble testnet      |   4       |  |
-
-<h3>Mainnets</h3>
-
-| Chain              | Domain Id | Address |
-| :----------------- | :-------- | -------: |
-| Ethereum           |   0       | 0x1234 |
-| Avalanche          |   1       |  |
-| Optimism           |   2       |  |
-| Arbitrum           |   3       |  |
-| Noble              |   4       |  |
-
-<h2>Channel ID -> Cosmos chain mappings</h2>
-
-https://github.com/cosmos/chain-registry/blob/master/noble/assetlist.json \
-https://github.com/cosmos/chain-registry/blob/master/testnets/nobletestnet/assetlist.json
-
-| Channel ID         | Chain |
-| :----------------- | :-------- |
-| 0                  |   dydx mainnet |
-
 <h2>Request payloads</h2>
 
 Before any burns, the user must approve the transfer.  For reference we are using ~300k gas (I think).
