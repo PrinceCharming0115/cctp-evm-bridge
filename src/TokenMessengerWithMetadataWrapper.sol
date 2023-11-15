@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// AUDIT: use 0.8.22 with evm_version = paris
 pragma solidity 0.7.6;
 
 import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
@@ -8,20 +9,22 @@ import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 /**
  * @title TokenMessengerWithMetadataWrapper
  * @notice A wrapper for a CCTP TokenMessengerWithMetatdata contract that collects fees.
- *  this contract -> TokenMessengerWithMetadata -> TokenMessenger 
+ *  this contract -> TokenMessengerWithMetadata -> TokenMessenger
  *
  * depositForBurn allows users to specify any destination domain.
- * depositForBurnNoble is for minting and forwarding from Noble.  
+ * depositForBurnNoble is for minting and forwarding from Noble.
  *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
  */
 contract TokenMessengerWithMetadataWrapper {
     // ============ Events ============
+    // AUDIT: indexed events cost quite a bit extra gas, do we really need `amountBurned` to be indexed? i.e. will you ever make an eth_getLogs query filtering by a specific amount?
+    // rule of thumb is only if you need to filter by a field should it be indexed.. also you can generally index quite easily off chain especially with relatively low volume events
     event Collect(
-        address indexed burnToken, 
-        bytes32 mintRecipient, 
-        uint256 indexed amountBurned, 
+        address indexed burnToken,
+        bytes32 mintRecipient,
+        uint256 indexed amountBurned,
         uint256 indexed fee,
-        uint32 source, 
+        uint32 source,
         uint32 dest
     );
 
@@ -46,24 +49,30 @@ contract TokenMessengerWithMetadataWrapper {
     );
 
     // ============ State Variables ============
+    // AUDIT: do we ever actually plan on updating these? can save a lot of gas by making them immutable
     TokenMessenger public tokenMessenger;
     TokenMessengerWithMetadata public tokenMessengerWithMetadata;
 
     // the domain id this contract is deployed on
     uint32 public immutable currentDomainId;
     // address which sets fees and collector
+    // AUDIT: consider using an Owned library for readability like https://github.com/transmissions11/solmate/blob/main/src/auth/Owned.sol
     address public owner;
     // address which fees are sent to
-    address payable public collector; 
+    address payable public collector;
     // address which can update fees
+    // AUDIT: why is feeUpdate != owner?
     address public feeUpdater;
     // current contract address (gas optimiation)
     address public immutable contractAddress;
 
     // fast transfer - allowed erc20 tokens
-    mapping(address => bool) public allowedTokens;    
+    // AUDIT: isn't it always just USDC?
+    mapping(address => bool) public allowedTokens;
 
     struct Fee {
+        // AUDIT: you definitely dont need 256 bits for the fee bps, max is 10,000 so you can get away with a uint16
+        // this will pack the struct into a single slot to save you a few thousand gas per read
         // percentage fee in bips
         uint256 percFee;
         // flat fee in uusdc (1 uusdc = 10^-6 usdc)
@@ -71,7 +80,7 @@ contract TokenMessengerWithMetadataWrapper {
         // needed for null check
         bool isInitialized;
     }
-    
+
     // destination domain id -> fee
     mapping(uint32 => Fee) public feeMap;
 
@@ -86,15 +95,20 @@ contract TokenMessengerWithMetadataWrapper {
         address _tokenMessenger,
         address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
+        // AUDIT: only need payable if sending ETH, you're only ever sending it USDC afaict
         address payable _collector,
         address _feeUpdater
     ) {
+        // AUDIT: custom errors for readability and gas savings
+        // i.e. defined as `error TokenMessengerNotSet();`
+        // thrown as `revert TokenMessengerNotSet();`
         require(_tokenMessenger != address(0), "TokenMessenger not set");
         tokenMessenger = TokenMessenger(_tokenMessenger);
 
         require(_tokenMessengerWithMetadata != address(0), "TMWithMetadata not set");
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
 
+        // AUDIT: is this actually a gas optimization? reading address(this) is literally 2 gas
         contractAddress = address(this);
 
         currentDomainId = _currentDomainId;
@@ -107,8 +121,8 @@ contract TokenMessengerWithMetadataWrapper {
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain.  
-     * 
+     * Can specify any destination domain.
+     *
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
      * @param mintRecipient - address receiving minted tokens on destination domain
@@ -119,6 +133,7 @@ contract TokenMessengerWithMetadataWrapper {
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
+        // AUDIT: wait isn't the token always USDC? Can you just take the USDC address as a constructor param?
         address burnToken,
         bytes32 destinationCaller
     ) external {
@@ -126,21 +141,25 @@ contract TokenMessengerWithMetadataWrapper {
         uint256 fee = calculateFee(amount, destinationDomain);
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, contractAddress, amount);
+        // AUDIT(gas): escrow fees in this contract and exposing a withdrawFees function only callable by collector
         token.transfer(collector, fee);
+        // AUDIT: we trust tokenMessenger fully right? Could we just do this as a one-time max approve instead?
+        // i.e. in the constructor or when adding new token do `token.approve(tokenMessenger, type(uint256).max)`
         token.approve(address(tokenMessenger), amount-fee);
 
         if (destinationCaller == bytes32(0)) {
             tokenMessenger.depositForBurn(
-                amount - fee, 
-                destinationDomain, 
-                mintRecipient, 
+                // AUDIT: nit but precalculate amount - fee and save into a local since you use it multiple times
+                amount - fee,
+                destinationDomain,
+                mintRecipient,
                 burnToken
             );
         } else {
             tokenMessenger.depositForBurnWithCaller(
-                amount - fee, 
-                destinationDomain, 
-                mintRecipient, 
+                amount - fee,
+                destinationDomain,
+                mintRecipient,
                 burnToken,
                 destinationCaller
             );
@@ -172,10 +191,11 @@ contract TokenMessengerWithMetadataWrapper {
     ) external {
 
         // collect fee
+        // AUDIT: nit - noble domain id as a constant
         uint256 fee = calculateFee(amount, uint32(4)); // noble domain id is 4
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, contractAddress, amount);
-        token.transfer(collector, fee);  
+        token.transfer(collector, fee);
         token.approve(address(tokenMessengerWithMetadata), amount-fee);
 
         if (destinationCaller == bytes32(0)) {
@@ -220,11 +240,13 @@ contract TokenMessengerWithMetadataWrapper {
     ) external {
         // only allow certain tokens for this domain
         require(allowedTokens[token] == true, "Token is not supported");
-        
+
         // transfer to collector
         IMintBurnToken mintBurntoken = IMintBurnToken(token);
         mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
-        mintBurntoken.transfer(collector, amount);  
+        // AUDIT: this is sooo sus for a user lmao
+        // I'd strongly recommend an escrow + unlock approach
+        mintBurntoken.transfer(collector, amount);
 
         // emit event
         emit FastTransfer(
@@ -239,7 +261,7 @@ contract TokenMessengerWithMetadataWrapper {
     /**
      * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the backend.
      * Only for minting to Noble (destination domain is hardcoded)
-     * 
+     *
      * @param amount amount of tokens to burn
      * @param recipient address of fallback mint recipient on Noble
      * @param token address of contract to burn deposited tokens, on local domain
@@ -259,11 +281,11 @@ contract TokenMessengerWithMetadataWrapper {
     ) external {
         // only allow certain tokens for this domain
         require(allowedTokens[token] == true, "Token is not supported");
-        
+
         // transfer to collector
         IMintBurnToken mintBurntoken = IMintBurnToken(token);
         mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
-        mintBurntoken.transfer(collector, amount);  
+        mintBurntoken.transfer(collector, amount);
 
         // emit event
         emit FastTransferIBC(
