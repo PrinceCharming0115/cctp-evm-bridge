@@ -8,13 +8,6 @@ forge build --extra-output abi
 
 <h2>Request payloads</h2>
 
-Before any burns, the user must approve the transfer.
-```
-const approveTx = await usdcEthContract.methods.approve(
-    ETH_TOKEN_MESSENGER_WITH_METADATA_WRAPPER_CONTRACT_ADDRESS, 
-    amount).send({gas: approveTxGas})
-```
-
 DepositForBurn is for a simple burn and mint to any destination chain, including Noble.
 ```
 depositForBurn(
