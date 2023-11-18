@@ -443,7 +443,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         address _mintRecipient
     ) public {
 
-        _amount = 20000;
+        uint256 _amount = 20000;
 
         vm.assume(_mintRecipient != address(0));
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
@@ -477,7 +477,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         address _mintRecipient
     ) public {
 
-        _amount = 20000;
+        uint256 _amount = 20000;
 
         vm.assume(_mintRecipient != address(0));
         bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
@@ -505,7 +505,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         address _mintRecipient
     ) public {
 
-        _amount = 20000;
+        uint256 _amount = 20000;
         uint64 _channel = 3;
         bytes32 _destinationBech32Prefix = bytes32(0);
         bytes32 _destRecipient = bytes32(0);
@@ -556,7 +556,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         address _mintRecipient
     ) public {
 
-        _amount = 20000;
+        uint256 _amount = 20000;
         uint64 _channel = 3;
         bytes32 _destinationBech32Prefix = bytes32(0);
         bytes32 _destRecipient = bytes32(0);
