@@ -440,7 +440,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
     // fastTransfer
     function testFastTransferHappyPath(
-        uint256 _amount,
         address _mintRecipient
     ) public {
 
@@ -475,7 +474,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
     // fastTransfer -> fail with weird token
     function testFastTransferDisallowedToken(
-        uint256 _amount,
         address _mintRecipient
     ) public {
 
@@ -504,7 +502,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
     // fastTransferIBC
     function testFastTransferIBCHappyPath(
-        uint256 _amount,
         address _mintRecipient
     ) public {
 
@@ -556,7 +553,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
     // fastTransferIBC
     function testFastTransferIBCDisallowedToken(
-        uint256 _amount,
         address _mintRecipient
     ) public {
 
