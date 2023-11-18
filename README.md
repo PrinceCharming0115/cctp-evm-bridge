@@ -19,7 +19,7 @@ depositForBurn(
 )
 ```
 
-DepositForBurnIBC is minting on Noble and forwarding to an IBC connected chain.  IBC forwarding metadata can be included in the payload.
+DepositForBurnIBC burns on the current chain, mints on Noble, and forwards to an IBC connected chain.  IBC forwarding metadata can be included in the payload.
 ```
 depositForBurnIBC(
     uint64 channel,                   // channel id to be used when ibc forwarding
@@ -43,7 +43,7 @@ fastTransfer(
 )
 ```
 
-FastTransferIBC is a faster, custodial version of depositForBurnIBC.  For fast, custodial transfers to a chain connected to Noble via IBC.
+FastTransferIBC is a faster, custodial version of depositForBurnIBC.
 ```
 fastTransferIBC(
         uint256 amount,                       // amount of tokens to burn
