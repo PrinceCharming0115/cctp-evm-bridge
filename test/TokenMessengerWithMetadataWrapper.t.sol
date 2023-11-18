@@ -356,7 +356,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     }
 
     // depositForBurn - no caller, $20 burn, 10 bips fee
-    function testDepositForBurnNobleSuccess(
+    function testDepositForBurnIBCSuccess(
         uint256 _amount,
         address _mintRecipient
     ) public {
@@ -376,7 +376,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         emit Collect(address(token), _mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(owner);
-        tokenMessengerWithMetadataWrapper.depositForBurnNoble(
+        tokenMessengerWithMetadataWrapper.depositForBurnIBC(
             uint64(0),
             bytes32(0),
             bytes32(0),

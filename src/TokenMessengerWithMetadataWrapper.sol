@@ -14,7 +14,7 @@ import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
  * TokenMessengerWithMetadataWrapper -> TokenMessenger
  *
  * [Bridging to Noble forwarding to IBC-connected chains]
- * depositForBurnNoble is for minting to Nobl and forwarding from Noble.
+ * depositForBurnIBC is for minting to Nobl and forwarding from Noble.
  * TokenMessengerWithMetadataWrapper -> TokenMessengerWithMetadata -> TokenMessenger
  */
 contract TokenMessengerWithMetadataWrapper {
@@ -163,7 +163,7 @@ contract TokenMessengerWithMetadataWrapper {
      * @param burnToken address of contract to burn deposited tokens, on local domain
      * @param memo arbitrary memo to be included when ibc forwarding
      */
-    function depositForBurnNoble(
+    function depositForBurnIBC(
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destinationRecipient,
