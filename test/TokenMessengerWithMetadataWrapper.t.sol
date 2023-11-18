@@ -20,6 +20,26 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         uint32 dest
     );
 
+    event FastTransfer(
+        uint256 amount,
+        uint32 indexed dest,
+        bytes32 indexed mintRecipient,
+        address token,
+        uint32 indexed source
+    );
+
+    event FastTransferIBC(
+        uint256 amount,
+        uint32 indexed dest,
+        bytes32 indexed mintRecipient,
+        address token,
+        uint32 indexed source,
+        uint64 channel,
+        bytes32 destinationBech32Prefix,
+        bytes32 destRecipient,
+        bytes memo
+    );
+
     // ============ State Variables ============
     uint32 public constant LOCAL_DOMAIN = 0;
     uint32 public constant MESSAGE_BODY_VERSION = 1;
@@ -374,13 +394,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     function testSetFeeHappyPath(
         uint256 _percFee
     ) public {
-        _percFee = bound(_percFee, 1, 10000); // 100%
+        _percFee = bound(_percFee, 1, 100); // 1%
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, _percFee, 15);
     }
 
     function testSetFeeTooHigh() public {
-        vm.expectRevert("can't set bips > 10k");
+        vm.expectRevert("can't set bips > 100");
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, 10001, 15); // 100.01%
     }
@@ -416,5 +436,158 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(token),
             bytes32(0)
         );
+    }
+
+    // fastTransfer
+    function testFastTransferHappyPath(
+        uint256 _amount,
+        address _mintRecipient
+    ) public {
+
+        _amount = 20000;
+
+        vm.assume(_mintRecipient != address(0));
+        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
+
+        token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
+
+        tokenMessengerWithMetadataWrapper.allowToken(address(token));
+
+        vm.prank(owner);
+        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+
+        vm.expectEmit(true, true, true, true);
+        emit FastTransfer(_amount, REMOTE_DOMAIN, _mintRecipientRaw, address(token), 0);
+
+        vm.prank(owner);
+        tokenMessengerWithMetadataWrapper.fastTransfer(
+            _amount,
+            REMOTE_DOMAIN,
+            _mintRecipientRaw,
+            address(token)
+        );
+
+        assertEq(0, token.balanceOf(owner));
+        assertEq(20000, token.balanceOf(COLLECTOR));
+    }
+
+    // fastTransfer -> fail with weird token
+    function testFastTransferDisallowedToken(
+        uint256 _amount,
+        address _mintRecipient
+    ) public {
+
+        _amount = 20000;
+
+        vm.assume(_mintRecipient != address(0));
+        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
+
+        token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
+
+        vm.prank(owner);
+        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+
+        vm.expectRevert("Token is not supported");
+
+        vm.prank(owner);
+        tokenMessengerWithMetadataWrapper.fastTransfer(
+            _amount,
+            REMOTE_DOMAIN,
+            _mintRecipientRaw,
+            address(token)
+        );
+    }
+
+    // fastTransferIBC
+    function testFastTransferIBCHappyPath(
+        uint256 _amount,
+        address _mintRecipient
+    ) public {
+
+        _amount = 20000;
+        uint64 _channel = 3;
+        bytes32 _destinationBech32Prefix = bytes32(0);
+        bytes32 _destRecipient = bytes32(0);
+        bytes memory _memo = "";
+
+        vm.assume(_mintRecipient != address(0));
+        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
+
+        token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
+
+        tokenMessengerWithMetadataWrapper.allowToken(address(token));
+
+        vm.prank(owner);
+        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+
+        vm.expectEmit(true, true, true, true);
+        emit FastTransferIBC(
+            _amount, 
+            REMOTE_DOMAIN,
+            _mintRecipientRaw, 
+            address(token), 
+            0,
+            _channel,
+            _destinationBech32Prefix,
+            _destRecipient,
+            _memo
+        );
+
+        vm.prank(owner);
+        tokenMessengerWithMetadataWrapper.fastTransferIBC(
+            _amount,
+            _mintRecipientRaw,
+            address(token),
+            _channel,
+            _destinationBech32Prefix,
+            _destRecipient,
+            _memo
+        );
+
+        assertEq(0, token.balanceOf(owner));
+        assertEq(20000, token.balanceOf(COLLECTOR));
+    }
+
+    // fastTransferIBC
+    function testFastTransferIBCDisallowedToken(
+        uint256 _amount,
+        address _mintRecipient
+    ) public {
+
+        _amount = 20000;
+        uint64 _channel = 3;
+        bytes32 _destinationBech32Prefix = bytes32(0);
+        bytes32 _destRecipient = bytes32(0);
+        bytes memory _memo = "";
+
+        vm.assume(_mintRecipient != address(0));
+        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
+
+        token.mint(owner, _amount);
+        vm.prank(FEE_UPDATER);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
+
+        vm.prank(owner);
+        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+
+        vm.expectRevert("Token is not supported");
+
+        vm.prank(owner);
+        tokenMessengerWithMetadataWrapper.fastTransferIBC(
+            _amount,
+            _mintRecipientRaw,
+            address(token),
+            _channel,
+            _destinationBech32Prefix,
+            _destRecipient,
+            _memo
+        );
+
     }
 }

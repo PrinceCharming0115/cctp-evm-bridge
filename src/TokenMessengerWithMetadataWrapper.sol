@@ -7,12 +7,15 @@ import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
- * @notice A wrapper for a CCTP TokenMessengerWithMetatdata contract that collects fees.
- *  this contract -> TokenMessengerWithMetadata -> TokenMessenger 
+ * @notice A wrapper for a CCTP TokenMessengerWithMetadata contract that collects fees.
  *
+ * [Bridging to CCTP Enabled Chains, including Noble]
  * depositForBurn allows users to specify any destination domain.
- * depositForBurnNoble is for minting and forwarding from Noble.  
- *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
+ * TokenMessengerWithMetadataWrapper -> TokenMessenger
+ *
+ * [Bridging to Noble forwarding to IBC-connected chains]
+ * depositForBurnNoble is for minting to Nobl and forwarding from Noble.
+ * TokenMessengerWithMetadataWrapper -> TokenMessengerWithMetadata -> TokenMessenger
  */
 contract TokenMessengerWithMetadataWrapper {
     // ============ Events ============
@@ -26,19 +29,19 @@ contract TokenMessengerWithMetadataWrapper {
     );
 
     event FastTransfer(
-        address token,
-        bytes32 indexed mintRecipient,
         uint256 amount,
-        uint32 indexed source,
-        uint32 indexed dest
+        uint32 indexed dest,
+        bytes32 indexed mintRecipient,
+        address token,
+        uint32 indexed source
     );
 
     event FastTransferIBC(
-        address token,
-        bytes32 indexed mintRecipient,
         uint256 amount,
-        uint32 indexed source,
         uint32 indexed dest,
+        bytes32 indexed mintRecipient,
+        address token,
+        uint32 indexed source,
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destRecipient,
@@ -107,7 +110,7 @@ contract TokenMessengerWithMetadataWrapper {
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain.  
+     * Can specify any destination domain, including Noble.
      * 
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
@@ -150,7 +153,7 @@ contract TokenMessengerWithMetadataWrapper {
 
     /**
      * @notice Wrapper function for "depositForBurn" that includes metadata.
-     * Only for minting to Noble (destination domain is hardcoded).
+     * Only used for minting to Noble and forwarding to IBC connected chains.
      *
      * @param channel channel id to be used when ibc forwarding
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
@@ -228,17 +231,17 @@ contract TokenMessengerWithMetadataWrapper {
 
         // emit event
         emit FastTransfer(
-            token,
-            recipient,
             amount,
-            currentDomainId,
-            destinationDomain
+            destinationDomain,
+            recipient,
+            token,
+            currentDomainId
         );
     }
 
     /**
-     * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the backend.
-     * Only for minting to Noble (destination domain is hardcoded)
+     * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the back end.
+     * Only used for minting to Noble and forwarding to IBC connected chains.
      * 
      * @param amount amount of tokens to burn
      * @param recipient address of fallback mint recipient on Noble
@@ -267,11 +270,11 @@ contract TokenMessengerWithMetadataWrapper {
 
         // emit event
         emit FastTransferIBC(
-            token,
-            recipient,
             amount,
-            currentDomainId,
             4,
+            recipient,
+            token,
+            currentDomainId,
             channel,
             destinationBech32Prefix,
             destinationRecipient,
@@ -318,12 +321,12 @@ contract TokenMessengerWithMetadataWrapper {
         feeUpdater = newFeeUpdater;
     }
 
-    function allowAddress(address newAllowedAddress) external {
+    function allowToken(address newAllowedAddress) external {
         require(msg.sender == owner, "unauthorized");
         allowedTokens[newAllowedAddress] = true;
     }
 
-    function disallowAddress(address newDisallowedAddress) external {
+    function disallowToken(address newDisallowedAddress) external {
         require(msg.sender == owner, "unauthorized");
         allowedTokens[newDisallowedAddress] = false;
     }
