@@ -235,10 +235,8 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
             revert TokenNotSupported();
         }
 
-        // transfer to collector
         IMintBurnToken mintBurntoken = IMintBurnToken(token);
         mintBurntoken.transferFrom(msg.sender, address(this), amount);
-        mintBurntoken.transfer(collector, amount);
 
         // emit event
         emit FastTransfer(
