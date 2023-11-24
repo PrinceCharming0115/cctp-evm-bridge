@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-pragma solidity 0.7.6;
+pragma solidity 0.8.22;
 
 import "evm-cctp-contracts/src/TokenMessenger.sol";
 import "evm-cctp-contracts/src/messages/Message.sol";
@@ -28,7 +28,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     bytes32 public constant REMOTE_TOKEN_MESSENGER =
         0x00000000000000000000000057d4eaf1091577a6b7d121202afbd2808134f117;
 
-    address payable public constant COLLECTOR = address(0x1);
+    address public constant COLLECTOR = address(0x1);
     address public constant FEE_UPDATER = address(0x2);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;

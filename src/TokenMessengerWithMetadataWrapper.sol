@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // AUDIT: use 0.8.22 with evm_version = paris
-pragma solidity 0.7.6;
+pragma solidity 0.8.22;
 
 import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
@@ -59,7 +59,7 @@ contract TokenMessengerWithMetadataWrapper {
     // AUDIT: consider using an Owned library for readability like https://github.com/transmissions11/solmate/blob/main/src/auth/Owned.sol
     address public owner;
     // address which fees are sent to
-    address payable public collector;
+    address public collector;
     // address which can update fees
     // AUDIT: why is feeUpdate != owner?
     address public feeUpdater;
@@ -95,8 +95,7 @@ contract TokenMessengerWithMetadataWrapper {
         address _tokenMessenger,
         address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
-        // AUDIT: only need payable if sending ETH, you're only ever sending it USDC afaict
-        address payable _collector,
+        address _collector,
         address _feeUpdater
     ) {
         // AUDIT: custom errors for readability and gas savings
@@ -330,7 +329,7 @@ contract TokenMessengerWithMetadataWrapper {
         owner = newOwner;
     }
 
-    function updateCollector(address payable newCollector) external {
+    function updateCollector(address newCollector) external {
         require(msg.sender == owner, "unauthorized");
         collector = newCollector;
     }
