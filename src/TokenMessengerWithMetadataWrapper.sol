@@ -76,7 +76,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         // percentage fee in bips
         uint16 percFee;
         // flat fee in uusdc (1 uusdc = 10^-6 usdc)
-        uint256 flatFee;
+        uint64 flatFee;
         // needed for null check
         bool isInitialized;
     }
@@ -310,7 +310,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         return (fee, amount-fee);
     }
 
-    function setFee(uint32 destinationDomain, uint16 percFee, uint256 flatFee) external {
+    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee) external {
         if (msg.sender != feeUpdater) {
             revert NotFeeUpdater();
         }
