@@ -4,6 +4,7 @@ pragma solidity 0.8.22;
 import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
 import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
+import "lib/solmate/src/auth/Owned.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
@@ -12,14 +13,14 @@ import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
  *
  * depositForBurn allows users to specify any destination domain.
  * depositForBurnNoble is for minting and forwarding from Noble.
- *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
+ * It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
  */
-contract TokenMessengerWithMetadataWrapper {
+contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     // ============ Events ============
     event Collect(
         address burnToken,
         bytes32 mintRecipient,
-        uint256 amountBurned,
+        uint256 amountBurned, 
         uint256 fee,
         uint32 source,
         uint32 dest
@@ -44,23 +45,28 @@ contract TokenMessengerWithMetadataWrapper {
         bytes32 destRecipient,
         bytes memo
     );
+    
+    // ============ Errors ============
     error TokenMessengerNotSet();
     error TokenMessengerWithMetadataNotSet();
-
+    error TokenNotSupported();
+    error FeeNotFound();
+    error BurnAmountTooLow();
+    error NotFeeUpdater();
+    error PercFeeTooHigh();
+    
     // ============ State Variables ============
+    // Circle contract for burning tokens
     TokenMessenger public immutable tokenMessenger;
+    // Noble contract for including IBC forwarding metadata
     TokenMessengerWithMetadata public tokenMessengerWithMetadata;
-
     // the domain id this contract is deployed on
     uint32 public immutable currentDomainId;
-    // noble domain id
-    uint32 public immutable nobleDomainId;
-    // address which sets fees and collector
-    // AUDIT: consider using an Owned library for readability like https://github.com/transmissions11/solmate/blob/main/src/auth/Owned.sol
-    address public owner;
-    // address which fees are sent to
+    // noble domain id (4)
+    uint32 public immutable nobleDomainId = 4;
+    // address that can collect fees
     address public collector;
-    // address which can update fees
+    // address that can update fees
     address public feeUpdater;
 
     // fast transfer - allowed erc20 tokens
@@ -82,8 +88,9 @@ contract TokenMessengerWithMetadataWrapper {
     /**
      * @param _tokenMessenger TokenMessenger address
      * @param _tokenMessengerWithMetadata TokenMessengerWithMetadata address
-     * @param _currentDomainId The domain id this contract is deployed on
-     * @param _collector address which fees are sent to
+     * @param _currentDomainId the domain id this contract is deployed on
+     * @param _collector address that can collect fees
+     * @param _feeUpdater address that can update fees
      */
     constructor(
         address _tokenMessenger,
@@ -92,12 +99,12 @@ contract TokenMessengerWithMetadataWrapper {
         address _collector,
         address _feeUpdater
     ) {
-        if (_tokenMessenger != address(0)) {
+        if (_tokenMessenger == address(0)) {
             revert TokenMessengerNotSet();
         }
         tokenMessenger = TokenMessenger(_tokenMessenger);
 
-        if(_tokenMessengerWithMetadata != address(0)) {
+        if(_tokenMessengerWithMetadata == address(0)) {
             revert TokenMessengerWithMetadataNotSet();
         }
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
@@ -105,7 +112,6 @@ contract TokenMessengerWithMetadataWrapper {
         currentDomainId = _currentDomainId;
         collector = _collector;
         feeUpdater = _feeUpdater;
-        owner = msg.sender;
     }
 
     // ============ External Functions ============
@@ -128,8 +134,10 @@ contract TokenMessengerWithMetadataWrapper {
         bytes32 destinationCaller
     ) external {
         // collect fee
-        uint256 fee = calculateFee(amount, destinationDomain);
-        uint256 remainder = amount - fee;
+        uint256 fee;
+        uint256 remainder;
+        (fee, remainder) = calculateFee(amount, destinationDomain);
+
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
 
@@ -174,9 +182,11 @@ contract TokenMessengerWithMetadataWrapper {
         bytes32 destinationCaller,
         bytes calldata memo
     ) external {
-
         // collect fee
-        uint256 fee = calculateFee(amount, uint32(nobleDomainId));
+        uint256 fee;
+        uint256 remainder;
+        (fee, remainder) = calculateFee(amount, nobleDomainId);
+
         IMintBurnToken token = IMintBurnToken(burnToken);
         token.transferFrom(msg.sender, address(this), amount);
 
@@ -185,7 +195,7 @@ contract TokenMessengerWithMetadataWrapper {
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
-                amount-fee,
+                remainder,
                 mintRecipient,
                 burnToken,
                 memo
@@ -195,7 +205,7 @@ contract TokenMessengerWithMetadataWrapper {
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
-                amount-fee,
+                remainder,
                 mintRecipient,
                 burnToken,
                 destinationCaller,
@@ -203,7 +213,7 @@ contract TokenMessengerWithMetadataWrapper {
             );
         }
 
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
+        emit Collect(burnToken, mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
     }
 
     /**
@@ -221,13 +231,13 @@ contract TokenMessengerWithMetadataWrapper {
         address token
     ) external {
         // only allow certain tokens for this domain
-        require(allowedTokens[token] == true, "Token is not supported");
+        if (allowedTokens[token] != true) {
+            revert TokenNotSupported();
+        }
 
         // transfer to collector
         IMintBurnToken mintBurntoken = IMintBurnToken(token);
         mintBurntoken.transferFrom(msg.sender, address(this), amount);
-        // AUDIT: this is sooo sus for a user lmao
-        // I'd strongly recommend an escrow + unlock approach
         mintBurntoken.transfer(collector, amount);
 
         // emit event
@@ -262,8 +272,9 @@ contract TokenMessengerWithMetadataWrapper {
         bytes calldata memo
     ) external {
         // only allow certain tokens for this domain
-        require(allowedTokens[token] == true, "Token is not supported");
-
+        if (allowedTokens[token] != true) {
+            revert TokenNotSupported();
+        }
         IMintBurnToken mintBurntoken = IMintBurnToken(token);
         mintBurntoken.transferFrom(msg.sender, address(this), amount);
 
@@ -273,7 +284,7 @@ contract TokenMessengerWithMetadataWrapper {
             recipient,
             amount,
             currentDomainId,
-            4,
+            nobleDomainId,
             channel,
             destinationBech32Prefix,
             destinationRecipient,
@@ -281,60 +292,63 @@ contract TokenMessengerWithMetadataWrapper {
         );
     }
 
-    function updateTokenMessengerWithMetadata(address newTokenMessenger) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateTokenMessengerWithMetadata(address newTokenMessenger) external onlyOwner {
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
     }
 
-    function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
+    function calculateFee(uint256 amount, uint32 destinationDomain) private view onlyOwner returns (uint256, uint256) {
         Fee memory entry = feeMap[destinationDomain];
-        require(entry.isInitialized, "Fee not found");
+        if (!entry.isInitialized) {
+            revert FeeNotFound();
+        }
+
         uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
-        require(amount > fee, "burn amount < fee");
-        return fee;
+        if (amount <= fee) {
+            revert BurnAmountTooLow();
+        }
+        // fee, remainder
+        return (fee, amount-fee);
     }
 
     function setFee(uint32 destinationDomain, uint16 percFee, uint256 flatFee) external {
-        require(msg.sender == feeUpdater, "unauthorized");
-        require(percFee <= 100, "can't set bips > 100"); // 1%
+        if (msg.sender != feeUpdater) {
+            revert NotFeeUpdater();
+        }
+        if (percFee > 100) { // 1%
+            revert PercFeeTooHigh();
+        }
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
-    function updateOwner(address newOwner) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateOwner(address newOwner) external onlyOwner {
         owner = newOwner;
     }
 
-    function updateCollector(address newCollector) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateCollector(address newCollector) external onlyOwner {
         collector = newCollector;
     }
 
-    function updateFeeUpdater(address newFeeUpdater) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateFeeUpdater(address newFeeUpdater) external onlyOwner {
         feeUpdater = newFeeUpdater;
     }
 
-    function allowAddress(address newAllowedAddress) external {
-        require(msg.sender == owner, "unauthorized");
+    function allowAddress(address newAllowedAddress) external onlyOwner {
         allowedTokens[newAllowedAddress] = true;
-        IMintBurnToken token = IMintBurnToken(newAllowedAddress); // todo change these to ierc20?
+        IERC20 token = IERC20(newAllowedAddress);
         token.approve(address(tokenMessenger), type(uint256).max);
         token.approve(address(tokenMessengerWithMetadata), type(uint256).max);
     }
 
-    function disallowAddress(address newDisallowedAddress) external {
-        require(msg.sender == owner, "unauthorized");
+    function disallowAddress(address newDisallowedAddress) external onlyOwner {
         allowedTokens[newDisallowedAddress] = false;
-        IMintBurnToken token = IMintBurnToken(newDisallowedAddress);
+        IERC20 token = IERC20(newDisallowedAddress);
         token.approve(address(tokenMessenger), 0);
         token.approve(address(tokenMessengerWithMetadata), 0);
     }
 
-    function withdrawFees(address tokenAddress) external {
-        require(msg.sender == collector, "unauthorized");
+    function withdrawFees(address tokenAddress) external onlyOwner {
         uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
-        IMintBurnToken token = IMintBurnToken(tokenAddress);
+        IERC20 token = IERC20(tokenAddress);
         token.transfer(collector, balance);
     }
 }
