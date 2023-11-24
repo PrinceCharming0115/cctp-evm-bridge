@@ -12,10 +12,10 @@ import "../src/TokenMessengerWithMetadataWrapper.sol";
 contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     // ============ Events ============
     event Collect(
-        address indexed burnToken, 
+        address burnToken, 
         bytes32 mintRecipient, 
-        uint256 indexed amountBurned, 
-        uint256 indexed fee,
+        uint256 amountBurned, 
+        uint256 fee,
         uint32 source, 
         uint32 dest
     );
@@ -372,9 +372,9 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     }
 
     function testSetFeeHappyPath(
-        uint256 _percFee
+        uint16 _percFee
     ) public {
-        _percFee = bound(_percFee, 1, 10000); // 100%
+        _percFee = uint16(bound(_percFee, 1, 100)); // 1%
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, _percFee, 15);
     }

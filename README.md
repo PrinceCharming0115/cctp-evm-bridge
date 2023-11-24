@@ -1,5 +1,11 @@
 # cctp-money-bridge-contracts
 
+<h2>Development</h2>
+Build
+```
+forge b --use 0.8.22 --evm-version paris --extra-output abi
+```
+
 <h2>Request payloads</h2>
 
 Before any burns, the user must approve the transfer.  For reference we are using ~300k gas (I think).
