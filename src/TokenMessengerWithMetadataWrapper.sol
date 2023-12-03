@@ -8,17 +8,16 @@ import "lib/solmate/src/auth/Owned.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
- * @notice A wrapper for a CCTP TokenMessengerWithMetatdata contract that collects fees.
+ * @notice A wrapper for a CCTP TokenMessengerWithMetadata contract that collects fees from USDC transfers.
  *  this contract -> TokenMessengerWithMetadata -> TokenMessenger
  *
  * depositForBurn allows users to specify any destination domain.
- * depositForBurnNoble is for minting and forwarding from Noble.
+ * depositForBurnIBC is for minting and forwarding from Noble.
  * It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
  */
 contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     // ============ Events ============
     event Collect(
-        address burnToken,
         bytes32 mintRecipient,
         uint256 amountBurned, 
         uint256 fee,
@@ -27,7 +26,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     );
 
     event FastTransfer(
-        address token,
         bytes32 mintRecipient,
         uint256 amount,
         uint32 source,
@@ -35,7 +33,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     );
 
     event FastTransferIBC(
-        address token,
         bytes32 mintRecipient,
         uint256 amount,
         uint32 source,
@@ -62,15 +59,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     TokenMessengerWithMetadata public tokenMessengerWithMetadata;
     // the domain id this contract is deployed on
     uint32 public immutable currentDomainId;
-    // noble domain id (4)
-    uint32 public immutable nobleDomainId = 4;
+    // noble domain id
+    uint32 public constant nobleDomainId = 4;
     // address that can collect fees
     address public collector;
     // address that can update fees
     address public feeUpdater;
-
-    // fast transfer - allowed erc20 tokens
-    mapping(address => bool) public allowedTokens;
+    // USDC address for this domain
+    address public immutable usdcAddress;
 
     struct Fee {
         // percentage fee in bips
@@ -90,14 +86,16 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @param _tokenMessengerWithMetadata TokenMessengerWithMetadata address
      * @param _currentDomainId the domain id this contract is deployed on
      * @param _collector address that can collect fees
-     * @param _feeUpdater address that can update fees
+     * @param _feeUpdater address that can update fees'
+     * @param _usdcAddress USDC erc20 token address for this domain
      */
     constructor(
         address _tokenMessenger,
         address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
         address _collector,
-        address _feeUpdater
+        address _feeUpdater,
+        address _usdcAddress
     ) {
         if (_tokenMessenger == address(0)) {
             revert TokenMessengerNotSet();
@@ -112,25 +110,24 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         currentDomainId = _currentDomainId;
         collector = _collector;
         feeUpdater = _feeUpdater;
+        usdcAddress = _usdcAddress;
     }
 
     // ============ External Functions ============
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain.
+     * Can specify any destination domain, including invalid ones.  Only for USDC.
      *
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
      * @param mintRecipient - address receiving minted tokens on destination domain
-     * @param burnToken - address of the token being burned on the source chain
      * @param destinationCaller - address allowed to mint on destination chain
      */
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        address burnToken,
         bytes32 destinationCaller
     ) external {
         // collect fee
@@ -138,7 +135,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         uint256 remainder;
         (fee, remainder) = calculateFee(amount, destinationDomain);
 
-        IMintBurnToken token = IMintBurnToken(burnToken);
+        IERC20 token = IERC20(usdcAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
         if (destinationCaller == bytes32(0)) {
@@ -146,18 +143,18 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
                 remainder,
                 destinationDomain,
                 mintRecipient,
-                burnToken
+                usdcAddress
             );
         } else {
             tokenMessenger.depositForBurnWithCaller(
                 remainder,
                 destinationDomain,
                 mintRecipient,
-                burnToken,
+                usdcAddress,
                 destinationCaller
             );
         }
-        emit Collect(burnToken, mintRecipient, remainder, fee, currentDomainId, destinationDomain);
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
     }
 
     /**
@@ -169,16 +166,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @param destinationRecipient address of recipient once ibc forwarded
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
-     * @param burnToken address of contract to burn deposited tokens, on local domain
      * @param memo arbitrary memo to be included when ibc forwarding
      */
-    function depositForBurnNoble(
+    function depositForBurnIBC(
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destinationRecipient,
         uint256 amount,
         bytes32 mintRecipient,
-        address burnToken,
         bytes32 destinationCaller,
         bytes calldata memo
     ) external {
@@ -187,7 +182,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         uint256 remainder;
         (fee, remainder) = calculateFee(amount, nobleDomainId);
 
-        IMintBurnToken token = IMintBurnToken(burnToken);
+        IERC20 token = IERC20(usdcAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
         if (destinationCaller == bytes32(0)) {
@@ -197,7 +192,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
                 destinationRecipient,
                 remainder,
                 mintRecipient,
-                burnToken,
+                usdcAddress,
                 memo
             );
         } else {
@@ -207,40 +202,36 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
                 destinationRecipient,
                 remainder,
                 mintRecipient,
-                burnToken,
+                usdcAddress,
                 destinationCaller,
                 memo
             );
         }
 
-        emit Collect(burnToken, mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
     }
 
     /**
-     * @notice For fast, custodial transfers.  Fees are collected on the backend.
+     * @notice For fast, non-custodial transfers of USDC.  Fees are collected on the backend.
+     * 
+     * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
+     * send tokens on the destination chain.  Trust-wise, it is equivalent to sending tokens to an exchange and expecting them
+     * not to steal your money.
      *
      * @param amount amount of tokens to burn
      * @param destinationDomain domain id the funds will be received on
      * @param recipient address of mint recipient on destination domain
-     * @param token address of contract to burn deposited tokens, on local domain
      */
     function fastTransfer(
         uint256 amount,
         uint32 destinationDomain,
-        bytes32 recipient,
-        address token
+        bytes32 recipient
     ) external {
-        // only allow certain tokens for this domain
-        if (allowedTokens[token] != true) {
-            revert TokenNotSupported();
-        }
-
-        IMintBurnToken mintBurntoken = IMintBurnToken(token);
-        mintBurntoken.transferFrom(msg.sender, address(this), amount);
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         // emit event
         emit FastTransfer(
-            token,
             recipient,
             amount,
             currentDomainId,
@@ -249,12 +240,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     }
 
     /**
-     * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the backend.
-     * Only for minting to Noble (destination domain is hardcoded)
+     * @notice For fast, non-custodial transfers that require a second IBC forward.  Only for minting/forwarding from Noble.
+     * 
+     * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
+     * send tokens on the destination chain.  Trust-wise, it is equivalent to sending tokens to an exchange and expecting them
+     * not to steal your money.
      *
      * @param amount amount of tokens to burn
      * @param recipient address of fallback mint recipient on Noble
-     * @param token address of contract to burn deposited tokens, on local domain
      * @param channel channel id to be used when ibc forwarding
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
      * @param destinationRecipient address of recipient once ibc forwarded
@@ -263,22 +256,16 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     function fastTransferIBC(
         uint256 amount,
         bytes32 recipient,
-        address token,
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destinationRecipient,
         bytes calldata memo
     ) external {
-        // only allow certain tokens for this domain
-        if (allowedTokens[token] != true) {
-            revert TokenNotSupported();
-        }
-        IMintBurnToken mintBurntoken = IMintBurnToken(token);
-        mintBurntoken.transferFrom(msg.sender, address(this), amount);
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         // emit event
         emit FastTransferIBC(
-            token,
             recipient,
             amount,
             currentDomainId,
@@ -330,23 +317,9 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         feeUpdater = newFeeUpdater;
     }
 
-    function allowAddress(address newAllowedAddress) external onlyOwner {
-        allowedTokens[newAllowedAddress] = true;
-        IERC20 token = IERC20(newAllowedAddress);
-        token.approve(address(tokenMessenger), type(uint256).max);
-        token.approve(address(tokenMessengerWithMetadata), type(uint256).max);
-    }
-
-    function disallowAddress(address newDisallowedAddress) external onlyOwner {
-        allowedTokens[newDisallowedAddress] = false;
-        IERC20 token = IERC20(newDisallowedAddress);
-        token.approve(address(tokenMessenger), 0);
-        token.approve(address(tokenMessengerWithMetadata), 0);
-    }
-
-    function withdrawFees(address tokenAddress) external onlyOwner {
-        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
-        IERC20 token = IERC20(tokenAddress);
+    function withdrawFees() external onlyOwner {
+        uint256 balance = IERC20(usdcAddress).balanceOf(address(this));
+        IERC20 token = IERC20(usdcAddress);
         token.transfer(collector, balance);
     }
 }

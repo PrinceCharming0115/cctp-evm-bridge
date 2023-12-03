@@ -12,7 +12,6 @@ import "../src/TokenMessengerWithMetadataWrapper.sol";
 contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     // ============ Events ============
     event Collect(
-        address burnToken, 
         bytes32 mintRecipient, 
         uint256 amountBurned, 
         uint256 fee,
@@ -40,6 +39,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     address public constant OWNER = address(0x1);
     address public constant COLLECTOR = address(0x2);
     address public constant FEE_UPDATER = address(0x3);
+    address public constant USDC_ADDRESS = address(0x4);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;
     MockMintBurnToken public token = new MockMintBurnToken();
@@ -74,11 +74,9 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(tokenMessengerWithMetadata),
             LOCAL_DOMAIN,
             COLLECTOR,
-            FEE_UPDATER
+            FEE_UPDATER,
+            USDC_ADDRESS
         );
-
-        vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.allowAddress(address(token));
 
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
@@ -108,7 +106,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(0),
             LOCAL_DOMAIN,
             COLLECTOR,
-            FEE_UPDATER
+            FEE_UPDATER,
+            USDC_ADDRESS
         );
     }
 
@@ -120,7 +119,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             address(tokenMessengerWithMetadata),
             LOCAL_DOMAIN,
             COLLECTOR,
-            FEE_UPDATER
+            FEE_UPDATER,
+            USDC_ADDRESS
         );
     }
 
@@ -147,7 +147,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
     }
@@ -170,14 +169,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(true, true, true, true);
-        emit Collect(address(token), _mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
 
@@ -202,14 +200,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(true, true, true, true);
-        emit Collect(address(token), _mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             0x0000000000000000000000000000000000000000000000000000000000000001
         );
 
@@ -234,14 +231,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(true, true, true, true);
-        emit Collect(address(token), _mintRecipientRaw, 8000000, 2000000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 8000000, 2000000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
             10000000,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
 
@@ -266,13 +262,12 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(true, true, true, true);
-        emit Collect(address(token), _mintRecipientRaw, 16000000, 4000000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 16000000, 4000000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
         vm.stopPrank();
@@ -298,14 +293,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(true, true, true, true);
-        emit Collect(address(token), _mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
 
@@ -330,14 +324,13 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         vm.expectEmit(false, false, false, true);
-        emit Collect(address(token), _mintRecipientRaw, 17980000, 2020000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipientRaw, 17980000, 2020000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
 
@@ -345,7 +338,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     }
 
     // depositForBurn - no caller, $20 burn, 10 bips fee
-    function testDepositForBurnNobleSuccess(
+    function testDepositForBurnIBCSuccess(
         uint256 _amount,
         address _mintRecipient
     ) public {
@@ -362,16 +355,15 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
         //vm.expectEmit(false, false, false, true);
-        //emit Collect(address(token), _mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        //emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.depositForBurnNoble(
+        tokenMessengerWithMetadataWrapper.depositForBurnIBC(
             uint64(0),
             bytes32(0),
             bytes32(0),
             _amount,
             _mintRecipientRaw,
-            address(token),
             bytes32(0),
             ""
         );
@@ -421,7 +413,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             _amount,
             55,
             _mintRecipientRaw,
-            address(token),
             bytes32(0)
         );
     }
