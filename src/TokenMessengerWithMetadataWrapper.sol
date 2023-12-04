@@ -278,11 +278,11 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         );
     }
 
-    function updateTokenMessengerWithMetadata(address newTokenMessenger) external onlyOwner {
-        tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
+    function updateTokenMessengerWithMetadata(address newTokenMessengerWithMetadata) external onlyOwner {
+        tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessengerWithMetadata);
         
         IERC20 token = IERC20(usdcAddress);
-        token.approve(newTokenMessenger, type(uint256).max);
+        token.approve(newTokenMessengerWithMetadata, type(uint256).max);
     }
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view onlyOwner returns (uint256, uint256) {
