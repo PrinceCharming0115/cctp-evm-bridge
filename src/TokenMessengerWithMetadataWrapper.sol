@@ -1,6 +1,5 @@
 pragma solidity 0.8.22;
 
-import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
 import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 import "lib/solmate/src/auth/Owned.sol";
@@ -109,7 +108,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         feeUpdater = _feeUpdater;
         usdcAddress = _usdcAddress;
 
-        IMintBurnToken token = IMintBurnToken(usdcAddress);
+        IERC20 token = IERC20(usdcAddress);
         token.approve(_tokenMessenger, type(uint256).max);
         token.approve(_tokenMessengerWithMetadata, type(uint256).max);
     }
@@ -282,7 +281,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     function updateTokenMessengerWithMetadata(address newTokenMessenger) external onlyOwner {
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
         
-        IMintBurnToken token = IMintBurnToken(usdcAddress);
+        IERC20 token = IERC20(usdcAddress);
         token.approve(newTokenMessenger, type(uint256).max);
     }
 
