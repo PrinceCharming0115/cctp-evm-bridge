@@ -9,11 +9,14 @@ import "lib/solmate/src/auth/Owned.sol";
 /**
  * @title TokenMessengerWithMetadataWrapper
  * @notice A wrapper for a CCTP TokenMessengerWithMetadata contract that collects fees from USDC transfers.
- *  this contract -> TokenMessengerWithMetadata -> TokenMessenger
+ *  This contract -> TokenMessengerWithMetadata -> TokenMessenger
  *
  * depositForBurn allows users to specify any destination domain.
  * depositForBurnIBC is for minting and forwarding from Noble.
- * It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
+ *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
+ * 
+ * fastTransfer and fastTransferIBC have equivalent outputs but take custody of user funds.  The depositor 
+ * must trust a third party to observe FastTransfer events and mint the depositor's funds on a destination chain.
  */
 contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     // ============ Events ============
@@ -45,11 +48,10 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     
     // ============ Errors ============
     error TokenMessengerNotSet();
-    error TokenMessengerWithMetadataNotSet();
     error TokenNotSupported();
     error FeeNotFound();
     error BurnAmountTooLow();
-    error NotFeeUpdater();
+    error Unauthorized();
     error PercFeeTooHigh();
     
     // ============ State Variables ============
@@ -86,7 +88,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @param _tokenMessengerWithMetadata TokenMessengerWithMetadata address
      * @param _currentDomainId the domain id this contract is deployed on
      * @param _collector address that can collect fees
-     * @param _feeUpdater address that can update fees'
+     * @param _feeUpdater address that can update fees
      * @param _usdcAddress USDC erc20 token address for this domain
      */
     constructor(
@@ -101,10 +103,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
             revert TokenMessengerNotSet();
         }
         tokenMessenger = TokenMessenger(_tokenMessenger);
-
-        if(_tokenMessengerWithMetadata == address(0)) {
-            revert TokenMessengerWithMetadataNotSet();
-        }
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
 
         currentDomainId = _currentDomainId;
@@ -215,10 +213,10 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @notice For fast, non-custodial transfers of USDC.  Fees are collected on the backend.
      * 
      * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
-     * send tokens on the destination chain.  Trust-wise, it is equivalent to sending tokens to an exchange and expecting them
+     * send tokens on the destination chain.  Trust-wise it is equivalent to sending tokens to an exchange and expecting them
      * not to steal your money.
      *
-     * @param amount amount of tokens to burn
+     * @param amount amount of tokens to transfer
      * @param destinationDomain domain id the funds will be received on
      * @param recipient address of mint recipient on destination domain
      */
@@ -240,13 +238,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     }
 
     /**
-     * @notice For fast, non-custodial transfers that require a second IBC forward.  Only for minting/forwarding from Noble.
+     * @notice For fast, non-custodial transfers of USDC that require a second IBC forward.  
+     * Only for minting/forwarding from Noble.  Fees are collected on the backend.
      * 
      * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
      * send tokens on the destination chain.  Trust-wise, it is equivalent to sending tokens to an exchange and expecting them
      * not to steal your money.
      *
-     * @param amount amount of tokens to burn
+     * @param amount amount of tokens to transfer
      * @param recipient address of fallback mint recipient on Noble
      * @param channel channel id to be used when ibc forwarding
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
@@ -295,14 +294,17 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         return (fee, amount-fee);
     }
 
-    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee) external {
+    /**
+     * Set fee for a given destination domain.  Set "enable" to false to disable relaying to a domain.
+     */
+    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee, bool enable) external {
         if (msg.sender != feeUpdater) {
-            revert NotFeeUpdater();
+            revert Unauthorized();
         }
         if (percFee > 100) { // 1%
             revert PercFeeTooHigh();
         }
-        feeMap[destinationDomain] = Fee(percFee, flatFee, true);
+        feeMap[destinationDomain] = Fee(percFee, flatFee, enable);
     }
 
     function updateOwner(address newOwner) external onlyOwner {
@@ -317,7 +319,10 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         feeUpdater = newFeeUpdater;
     }
 
-    function withdrawFees() external onlyOwner {
+    function withdrawFees() external {
+        if (msg.sender != collector) {
+            revert Unauthorized();
+        }
         uint256 balance = IERC20(usdcAddress).balanceOf(address(this));
         IERC20 token = IERC20(usdcAddress);
         token.transfer(collector, balance);
