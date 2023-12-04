@@ -15,8 +15,8 @@ import "lib/solmate/src/auth/Owned.sol";
  * depositForBurnIBC is for minting and forwarding from Noble.
  *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
  * 
- * fastTransfer and fastTransferIBC have equivalent outputs but take custody of user funds.  The depositor 
- * must trust a third party to observe FastTransfer events and mint the depositor's funds on a destination chain.
+ * fastTransfer and fastTransferIBC have equivalent outputs but take custody of user funds.  Depositors are trusting
+ * a third party to observe FastTransfer events and mint the depositor's funds on a destination chain.
  */
 contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     // ============ Events ============
@@ -216,9 +216,9 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     /**
      * @notice For fast, non-custodial transfers of USDC.  Fees are collected on the backend.
      * 
-     * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
-     * send tokens on the destination chain.  Trust-wise it is equivalent to sending tokens to an exchange and expecting them
-     * not to steal your money.
+     * Important: a successful bridge here completely relies on a 3rd party service provider to send tokens
+     * on a destination chain.  Trust-wise this is equivalent to sending tokens to an exchange and 
+     * expecting them not to steal your money.
      *
      * @param amount amount of tokens to transfer
      * @param destinationDomain domain id the funds will be received on
@@ -245,9 +245,9 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @notice For fast, non-custodial transfers of USDC that require a second IBC forward.  
      * Only for minting/forwarding from Noble.  Fees are collected on the backend.
      * 
-     * It's important to note that a successful bridge here completely relies on a 3rd party service provider to 
-     * send tokens on the destination chain.  Trust-wise, it is equivalent to sending tokens to an exchange and expecting them
-     * not to steal your money.
+     * Important: a successful bridge here completely relies on a 3rd party service provider to send tokens
+     * on a destination chain.  Trust-wise this is equivalent to sending tokens to an exchange and 
+     * expecting them not to steal your money.
      *
      * @param amount amount of tokens to transfer
      * @param recipient address of fallback mint recipient on Noble
