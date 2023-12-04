@@ -74,7 +74,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             LOCAL_DOMAIN,
             COLLECTOR,
             FEE_UPDATER,
-            USDC_ADDRESS
+            address(token)
         );
 
         vm.prank(FEE_UPDATER);
@@ -85,9 +85,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER
         );
 
-        linkTokenPair(
-            tokenMinter, address(token), REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER
-        );
+        linkTokenPair(tokenMinter, address(token), REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER);
         tokenMinter.addLocalTokenMessenger(address(tokenMessenger));
 
         vm.prank(tokenController);
@@ -101,8 +99,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         vm.expectRevert(TokenMessengerNotSet.selector);
 
         tokenMessengerWithMetadataWrapper = new TokenMessengerWithMetadataWrapper(
-            address(tokenMessenger),
             address(0),
+            address(address(tokenMessengerWithMetadata)),
             LOCAL_DOMAIN,
             COLLECTOR,
             FEE_UPDATER,
@@ -186,8 +184,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         vm.prank(OWNER);
         token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
 
-        //vm.expectEmit(true, true, true, true);
-        //emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        vm.expectEmit(true, true, true, true);
+        emit Collect(_mintRecipientRaw, 19980000, 20000, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurn(
@@ -197,7 +195,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             bytes32(0)
         );
 
-        //assertEq(0, token.balanceOf(OWNER));
+        assertEq(0, token.balanceOf(OWNER));
+        assertEq(20000, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
     }
 
     // depositForBurn - with caller, $20 burn, 10 bips fee

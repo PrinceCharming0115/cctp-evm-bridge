@@ -109,6 +109,10 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         collector = _collector;
         feeUpdater = _feeUpdater;
         usdcAddress = _usdcAddress;
+
+        IMintBurnToken token = IMintBurnToken(usdcAddress);
+        token.approve(_tokenMessenger, type(uint256).max);
+        token.approve(_tokenMessengerWithMetadata, type(uint256).max);
     }
 
     // ============ External Functions ============
@@ -278,6 +282,9 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
 
     function updateTokenMessengerWithMetadata(address newTokenMessenger) external onlyOwner {
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
+        
+        IMintBurnToken token = IMintBurnToken(usdcAddress);
+        token.approve(newTokenMessenger, type(uint256).max);
     }
 
     function calculateFee(uint256 amount, uint32 destinationDomain) private view onlyOwner returns (uint256, uint256) {
