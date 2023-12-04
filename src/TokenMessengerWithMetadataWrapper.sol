@@ -304,14 +304,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     /**
      * Set fee for a given destination domain.  Set "enable" to false to disable relaying to a domain.
      */
-    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee, bool enable) external {
+    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee) external {
         if (msg.sender != feeUpdater) {
             revert Unauthorized();
         }
         if (percFee > 100) { // 1%
             revert PercFeeTooHigh();
         }
-        feeMap[destinationDomain] = Fee(percFee, flatFee, enable);
+        feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
     function updateOwner(address newOwner) external onlyOwner {
