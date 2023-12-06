@@ -20,7 +20,6 @@ Arbitrum Goerli
 
 Optimism Goerli
 0x2A32cC5dFC71A63b2c7F4aa49b01Dfe6860D3732
->>>>>>> audit-pass-2
 
 Base Goerli
 0x2a32cc5dfc71a63b2c7f4aa49b01dfe6860d3732
