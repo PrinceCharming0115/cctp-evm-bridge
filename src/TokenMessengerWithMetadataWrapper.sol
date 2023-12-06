@@ -1,80 +1,83 @@
-// SPDX-License-Identifier: Apache-2.0
-pragma solidity 0.7.6;
+pragma solidity 0.8.22;
 
-import "lib/evm-cctp-contracts/src/interfaces/IMintBurnToken.sol";
 import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
 import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
+import "lib/solmate/src/auth/Owned.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
- * @notice A wrapper for a CCTP TokenMessengerWithMetadata contract that collects fees.
+ * @notice A wrapper for a CCTP TokenMessengerWithMetadata contract that collects fees from USDC transfers.
+ *  This contract -> TokenMessengerWithMetadata -> TokenMessenger
  *
  * [Bridging to CCTP Enabled Chains, including Noble]
  * depositForBurn allows users to specify any destination domain.
- * TokenMessengerWithMetadataWrapper -> TokenMessenger
- *
- * [Bridging to Noble forwarding to IBC-connected chains]
- * depositForBurnIBC is for minting to Nobl and forwarding from Noble.
- * TokenMessengerWithMetadataWrapper -> TokenMessengerWithMetadata -> TokenMessenger
+ * depositForBurnIBC is for minting and forwarding from Noble.
+ *  It allows users to supply additional IBC forwarding metadata after initiating a transfer to Noble.
+ * 
+ * fastTransfer and fastTransferIBC have equivalent outputs but take custody of user funds.  Depositors are trusting
+ * a third party to observe FastTransfer events and mint the depositor's funds on a destination chain.
  */
-contract TokenMessengerWithMetadataWrapper {
+contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     // ============ Events ============
     event Collect(
-        address indexed burnToken, 
-        bytes32 mintRecipient, 
-        uint256 indexed amountBurned, 
-        uint256 indexed fee,
-        uint32 source, 
+        bytes32 mintRecipient,
+        uint256 amountBurned, 
+        uint256 fee,
+        uint32 source,
         uint32 dest
     );
 
     event FastTransfer(
+        bytes32 mintRecipient,
         uint256 amount,
-        uint32 indexed dest,
-        bytes32 indexed mintRecipient,
-        address token,
-        uint32 indexed source
+        uint32 source,
+        uint32 dest
     );
 
     event FastTransferIBC(
+        bytes32 mintRecipient,
         uint256 amount,
-        uint32 indexed dest,
-        bytes32 indexed mintRecipient,
-        address token,
-        uint32 indexed source,
+        uint32 source,
+        uint32 dest,
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destRecipient,
         bytes memo
     );
-
+    
+    // ============ Errors ============
+    error TokenMessengerNotSet();
+    error TokenNotSupported();
+    error FeeNotFound();
+    error BurnAmountTooLow();
+    error Unauthorized();
+    error PercFeeTooHigh();
+    
     // ============ State Variables ============
-    TokenMessenger public tokenMessenger;
+    // Circle contract for burning tokens
+    TokenMessenger public immutable tokenMessenger;
+    // Noble contract for including IBC forwarding metadata
     TokenMessengerWithMetadata public tokenMessengerWithMetadata;
-
     // the domain id this contract is deployed on
     uint32 public immutable currentDomainId;
-    // address which sets fees and collector
-    address public owner;
-    // address which fees are sent to
-    address payable public collector; 
-    // address which can update fees
+    // noble domain id
+    uint32 public constant nobleDomainId = 4;
+    // address that can collect fees
+    address public collector;
+    // address that can update fees
     address public feeUpdater;
-    // current contract address (gas optimiation)
-    address public immutable contractAddress;
-
-    // fast transfer - allowed erc20 tokens
-    mapping(address => bool) public allowedTokens;    
+    // USDC address for this domain
+    address public immutable usdcAddress;
 
     struct Fee {
         // percentage fee in bips
-        uint256 percFee;
+        uint16 percFee;
         // flat fee in uusdc (1 uusdc = 10^-6 usdc)
-        uint256 flatFee;
+        uint64 flatFee;
         // needed for null check
         bool isInitialized;
     }
-    
+
     // destination domain id -> fee
     mapping(uint32 => Fee) public feeMap;
 
@@ -82,73 +85,77 @@ contract TokenMessengerWithMetadataWrapper {
     /**
      * @param _tokenMessenger TokenMessenger address
      * @param _tokenMessengerWithMetadata TokenMessengerWithMetadata address
-     * @param _currentDomainId The domain id this contract is deployed on
-     * @param _collector address which fees are sent to
+     * @param _currentDomainId the domain id this contract is deployed on
+     * @param _collector address that can collect fees
+     * @param _feeUpdater address that can update fees
+     * @param _usdcAddress USDC erc20 token address for this domain
      */
     constructor(
         address _tokenMessenger,
         address _tokenMessengerWithMetadata,
         uint32 _currentDomainId,
-        address payable _collector,
-        address _feeUpdater
+        address _collector,
+        address _feeUpdater,
+        address _usdcAddress
     ) {
-        require(_tokenMessenger != address(0), "TokenMessenger not set");
+        if (_tokenMessenger == address(0)) {
+            revert TokenMessengerNotSet();
+        }
         tokenMessenger = TokenMessenger(_tokenMessenger);
-
-        require(_tokenMessengerWithMetadata != address(0), "TMWithMetadata not set");
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(_tokenMessengerWithMetadata);
-
-        contractAddress = address(this);
 
         currentDomainId = _currentDomainId;
         collector = _collector;
         feeUpdater = _feeUpdater;
-        owner = msg.sender;
+        usdcAddress = _usdcAddress;
+
+        IERC20 token = IERC20(usdcAddress);
+        token.approve(_tokenMessenger, type(uint256).max);
+        token.approve(_tokenMessengerWithMetadata, type(uint256).max);
     }
 
     // ============ External Functions ============
     /**
      * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
      * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain, including Noble.
-     * 
+     * Can specify any destination domain, including invalid ones.  Only for USDC.
+     *
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
      * @param mintRecipient - address receiving minted tokens on destination domain
-     * @param burnToken - address of the token being burned on the source chain
      * @param destinationCaller - address allowed to mint on destination chain
      */
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        address burnToken,
         bytes32 destinationCaller
     ) external {
         // collect fee
-        uint256 fee = calculateFee(amount, destinationDomain);
-        IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, contractAddress, amount);
-        token.transfer(collector, fee);
-        token.approve(address(tokenMessenger), amount-fee);
+        uint256 fee;
+        uint256 remainder;
+        (fee, remainder) = calculateFee(amount, destinationDomain);
+
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         if (destinationCaller == bytes32(0)) {
             tokenMessenger.depositForBurn(
-                amount - fee, 
-                destinationDomain, 
-                mintRecipient, 
-                burnToken
+                remainder,
+                destinationDomain,
+                mintRecipient,
+                usdcAddress
             );
         } else {
             tokenMessenger.depositForBurnWithCaller(
-                amount - fee, 
-                destinationDomain, 
-                mintRecipient, 
-                burnToken,
+                remainder,
+                destinationDomain,
+                mintRecipient,
+                usdcAddress,
                 destinationCaller
             );
         }
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, destinationDomain);
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
     }
 
     /**
@@ -160,7 +167,6 @@ contract TokenMessengerWithMetadataWrapper {
      * @param destinationRecipient address of recipient once ibc forwarded
      * @param amount amount of tokens to burn
      * @param mintRecipient address of mint recipient on destination domain
-     * @param burnToken address of contract to burn deposited tokens, on local domain
      * @param memo arbitrary memo to be included when ibc forwarding
      */
     function depositForBurnIBC(
@@ -169,26 +175,25 @@ contract TokenMessengerWithMetadataWrapper {
         bytes32 destinationRecipient,
         uint256 amount,
         bytes32 mintRecipient,
-        address burnToken,
         bytes32 destinationCaller,
         bytes calldata memo
     ) external {
-
         // collect fee
-        uint256 fee = calculateFee(amount, uint32(4)); // noble domain id is 4
-        IMintBurnToken token = IMintBurnToken(burnToken);
-        token.transferFrom(msg.sender, contractAddress, amount);
-        token.transfer(collector, fee);  
-        token.approve(address(tokenMessengerWithMetadata), amount-fee);
+        uint256 fee;
+        uint256 remainder;
+        (fee, remainder) = calculateFee(amount, nobleDomainId);
+
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         if (destinationCaller == bytes32(0)) {
             tokenMessengerWithMetadata.depositForBurn(
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
-                amount-fee,
+                remainder,
                 mintRecipient,
-                burnToken,
+                usdcAddress,
                 memo
             );
         } else {
@@ -196,41 +201,39 @@ contract TokenMessengerWithMetadataWrapper {
                 channel,
                 destinationBech32Prefix,
                 destinationRecipient,
-                amount-fee,
+                remainder,
                 mintRecipient,
-                burnToken,
+                usdcAddress,
                 destinationCaller,
                 memo
             );
         }
 
-        emit Collect(burnToken, mintRecipient, amount-fee, fee, currentDomainId, uint32(4));
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
     }
 
     /**
-     * @notice For fast, custodial transfers.  Fees are collected on the backend.
+     * @notice For fast, non-custodial transfers of USDC.  Fees are collected on the backend.
+     * 
+     * Important: a successful bridge here completely relies on a 3rd party service provider to send tokens
+     * on a destination chain.  Trust-wise this is equivalent to sending tokens to an exchange and 
+     * expecting them not to steal your money.
      *
-     * @param amount amount of tokens to burn
+     * @param amount amount of tokens to transfer
      * @param destinationDomain domain id the funds will be received on
      * @param recipient address of mint recipient on destination domain
-     * @param token address of contract to burn deposited tokens, on local domain
      */
     function fastTransfer(
         uint256 amount,
         uint32 destinationDomain,
-        bytes32 recipient,
-        address token
+        bytes32 recipient
     ) external {
-        // only allow certain tokens for this domain
-        require(allowedTokens[token] == true, "Token is not supported");
-        
-        // transfer to collector
-        IMintBurnToken mintBurntoken = IMintBurnToken(token);
-        mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
-        mintBurntoken.transfer(collector, amount);  
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         // emit event
         emit FastTransfer(
+            recipient,
             amount,
             destinationDomain,
             recipient,
@@ -240,12 +243,15 @@ contract TokenMessengerWithMetadataWrapper {
     }
 
     /**
-     * @notice For fast, custodial transfers require a second IBC forward.  Fees are collected on the back end.
-     * Only used for minting to Noble and forwarding to IBC connected chains.
-     * 
-     * @param amount amount of tokens to burn
+     * @notice For fast, non-custodial transfers of USDC that require a second IBC forward.  
+     * Only for minting/forwarding from Noble.  Fees are collected on the backend.
+     *
+     * Important: a successful bridge here completely relies on a 3rd party service provider to send tokens
+     * on a destination chain.  Trust-wise this is equivalent to sending tokens to an exchange and 
+     * expecting them not to steal your money.
+     *
+     * @param amount amount of tokens to transfer
      * @param recipient address of fallback mint recipient on Noble
-     * @param token address of contract to burn deposited tokens, on local domain
      * @param channel channel id to be used when ibc forwarding
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
      * @param destinationRecipient address of recipient once ibc forwarded
@@ -254,27 +260,20 @@ contract TokenMessengerWithMetadataWrapper {
     function fastTransferIBC(
         uint256 amount,
         bytes32 recipient,
-        address token,
         uint64 channel,
         bytes32 destinationBech32Prefix,
         bytes32 destinationRecipient,
         bytes calldata memo
     ) external {
-        // only allow certain tokens for this domain
-        require(allowedTokens[token] == true, "Token is not supported");
-        
-        // transfer to collector
-        IMintBurnToken mintBurntoken = IMintBurnToken(token);
-        mintBurntoken.transferFrom(msg.sender, contractAddress, amount);
-        mintBurntoken.transfer(collector, amount);  
+        IERC20 token = IERC20(usdcAddress);
+        token.transferFrom(msg.sender, address(this), amount);
 
         // emit event
         emit FastTransferIBC(
-            amount,
-            4,
             recipient,
-            token,
+            amount,
             currentDomainId,
+            nobleDomainId,
             channel,
             destinationBech32Prefix,
             destinationRecipient,
@@ -282,52 +281,58 @@ contract TokenMessengerWithMetadataWrapper {
         );
     }
 
-    function updateTokenMessenger(address newTokenMessenger) external {
-        require(msg.sender == owner, "unauthorized");
-        tokenMessenger = TokenMessenger(newTokenMessenger);
+    function updateTokenMessengerWithMetadata(address newTokenMessengerWithMetadata) external onlyOwner {
+        tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessengerWithMetadata);
+        
+        IERC20 token = IERC20(usdcAddress);
+        token.approve(newTokenMessengerWithMetadata, type(uint256).max);
     }
 
-    function updateTokenMessengerWithMetadata(address newTokenMessenger) external {
-        require(msg.sender == owner, "unauthorized");
-        tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessenger);
-    }
-
-    function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256) {
+    function calculateFee(uint256 amount, uint32 destinationDomain) private view onlyOwner returns (uint256, uint256) {
         Fee memory entry = feeMap[destinationDomain];
-        require(entry.isInitialized, "Fee not found");
+        if (!entry.isInitialized) {
+            revert FeeNotFound();
+        }
+
         uint256 fee = (amount * entry.percFee) / 10000 + entry.flatFee;
-        require(amount > fee, "burn amount < fee");
-        return fee;
+        if (amount <= fee) {
+            revert BurnAmountTooLow();
+        }
+        // fee, remainder
+        return (fee, amount-fee);
     }
 
-    function setFee(uint32 destinationDomain, uint256 percFee, uint256 flatFee) external {
-        require(msg.sender == feeUpdater, "unauthorized");
-        require(percFee <= 100, "can't set bips > 100"); // 1%
+    /**
+     * Set fee for a given destination domain.  Set "enable" to false to disable relaying to a domain.
+     */
+    function setFee(uint32 destinationDomain, uint16 percFee, uint64 flatFee) external {
+        if (msg.sender != feeUpdater) {
+            revert Unauthorized();
+        }
+        if (percFee > 100) { // 1%
+            revert PercFeeTooHigh();
+        }
         feeMap[destinationDomain] = Fee(percFee, flatFee, true);
     }
 
-    function updateOwner(address newOwner) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateOwner(address newOwner) external onlyOwner {
         owner = newOwner;
     }
 
-    function updateCollector(address payable newCollector) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateCollector(address newCollector) external onlyOwner {
         collector = newCollector;
     }
 
-    function updateFeeUpdater(address newFeeUpdater) external {
-        require(msg.sender == owner, "unauthorized");
+    function updateFeeUpdater(address newFeeUpdater) external onlyOwner {
         feeUpdater = newFeeUpdater;
     }
 
-    function allowToken(address newAllowedAddress) external {
-        require(msg.sender == owner, "unauthorized");
-        allowedTokens[newAllowedAddress] = true;
-    }
-
-    function disallowToken(address newDisallowedAddress) external {
-        require(msg.sender == owner, "unauthorized");
-        allowedTokens[newDisallowedAddress] = false;
+    function withdrawFees() external {
+        if (msg.sender != collector) {
+            revert Unauthorized();
+        }
+        uint256 balance = IERC20(usdcAddress).balanceOf(address(this));
+        IERC20 token = IERC20(usdcAddress);
+        token.transfer(collector, balance);
     }
 }
