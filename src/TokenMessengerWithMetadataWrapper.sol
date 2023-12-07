@@ -285,7 +285,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         token.approve(newTokenMessengerWithMetadata, type(uint256).max);
     }
 
-    function calculateFee(uint256 amount, uint32 destinationDomain) private view onlyOwner returns (uint256, uint256) {
+    function calculateFee(uint256 amount, uint32 destinationDomain) private view returns (uint256, uint256) {
         Fee memory entry = feeMap[destinationDomain];
         if (!entry.isInitialized) {
             revert FeeNotFound();
