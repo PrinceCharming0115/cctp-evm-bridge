@@ -13,7 +13,7 @@ forge test --use 0.8.22 --evm-version paris --extra-output abi
 ## Testnet Deployments
 ```
 Ethereum Goerli
-0x0895e824b8d6cbc4cd9B7a1259e6EAedf9d33C92
+0x5eF015e5Fc4900e0e464C01098B228cF0f28B599
 
 Arbitrum Goerli
 0x3C02aF68A84c6bFb470eE604F6C502FEA4b49b41
