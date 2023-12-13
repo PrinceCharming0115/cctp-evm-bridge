@@ -6,8 +6,9 @@ import "evm-cctp-contracts/src/messages/BurnMessage.sol";
 import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/test/TestUtils.sol";
 import "../src/TokenMessengerWithMetadataWrapper.sol";
+import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 
-contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
+contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
     // ============ Events ============
     event Collect(
         bytes32 mintRecipient, 
@@ -16,8 +17,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         uint32 source, 
         uint32 dest
     );
-
-
 
     // ============ Errors ============
     error TokenMessengerNotSet();
@@ -174,6 +173,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         uint64 _flatFee
     ) public {
 
+        snapStart("depositForBurnSuccess");
+
         vm.assume(_amount > 0);
         vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
         vm.assume(_percFee > 0);
@@ -203,6 +204,8 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
         assertEq(0, token.balanceOf(OWNER));
         assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+
+        snapEnd();
     }
 
     // depositForBurn with caller

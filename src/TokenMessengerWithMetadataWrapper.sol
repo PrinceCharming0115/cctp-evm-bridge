@@ -193,7 +193,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
 
     function updateTokenMessengerWithMetadata(address newTokenMessengerWithMetadata) external onlyOwner {
         IERC20 token = IERC20(tokenAddress);
-        token.approve(address(tokenMessengerWithMetadata), uint256(0));
+        token.approve(address(tokenMessengerWithMetadata), 0);
 
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessengerWithMetadata);
         token.approve(newTokenMessengerWithMetadata, type(uint256).max);
