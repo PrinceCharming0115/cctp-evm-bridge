@@ -3,6 +3,7 @@ pragma solidity 0.8.22;
 import "lib/evm-cctp-contracts/src/TokenMessenger.sol";
 import "lib/cctp-contracts/src/TokenMessengerWithMetadata.sol";
 import "lib/solmate/src/auth/Owned.sol";
+import {ERC20} from "solmate/tokens/ERC20.sol";
 
 /**
  * @title TokenMessengerWithMetadataWrapper
@@ -111,30 +112,58 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         bytes32 destinationCaller
     ) external {
         // collect fee
-        uint256 fee;
-        uint256 remainder;
-        (fee, remainder) = calculateFee(amount, destinationDomain);
-
+        (uint256 fee, uint256 remainder) = calculateFee(amount, destinationDomain);
         IERC20 token = IERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
+        _depositForBurn(remainder, destinationDomain, mintRecipient, destinationCaller);
+
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
+    }
+
+    function depositForBurnPermit(
+        uint256 amount,
+        uint32 destinationDomain,
+        bytes32 mintRecipient,
+        bytes32 destinationCaller,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // collect fee
+        (uint256 fee, uint256 remainder) = calculateFee(amount, destinationDomain);
+        ERC20 token = ERC20(tokenAddress);
+        token.permit(msg.sender, address(this), amount, deadline, v, r, s);
+        token.transferFrom(msg.sender, address(this), amount);
+
+        _depositForBurn(remainder, destinationDomain, mintRecipient, destinationCaller);
+
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
+    }
+
+    function _depositForBurn(
+        uint256 amount,
+        uint32 destinationDomain,
+        bytes32 mintRecipient,
+        bytes32 destinationCaller
+    ) private {
         if (destinationCaller == bytes32(0)) {
             tokenMessenger.depositForBurn(
-                remainder,
+                amount,
                 destinationDomain,
                 mintRecipient,
                 tokenAddress
             );
         } else {
             tokenMessenger.depositForBurnWithCaller(
-                remainder,
+                amount,
                 destinationDomain,
                 mintRecipient,
                 tokenAddress,
                 destinationCaller
             );
         }
-        emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
     }
 
     /**
@@ -158,9 +187,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         bytes calldata memo
     ) external {
         // collect fee
-        uint256 fee;
-        uint256 remainder;
-        (fee, remainder) = calculateFee(amount, nobleDomainId);
+        (uint256 fee, uint256 remainder) = calculateFee(amount, nobleDomainId);
 
         IERC20 token = IERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
