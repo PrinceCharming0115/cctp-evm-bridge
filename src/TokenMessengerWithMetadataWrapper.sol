@@ -24,8 +24,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         uint32 source,
         uint32 dest
     );
-    event Debug(address debug);
-    
+
     // ============ Errors ============
     error TokenMessengerNotSet();
     error TokenNotSupported();
