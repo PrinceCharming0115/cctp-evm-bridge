@@ -42,8 +42,8 @@ contract PermitTest is Test, TestUtils, GasSnapshot {
     address public constant TOKEN_ADDRESS = address(0x4);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;
-    MockERC20 public token = new MockERC20();
-    SigUtils public sigUtils = new SigUtils(token.DOMAIN_SEPARATOR());
+    MockERC20 public token;
+    SigUtils public sigUtils;
     TokenMinter public tokenMinter = new TokenMinter(tokenController);
 
     MessageTransmitter public messageTransmitter = new MessageTransmitter(
@@ -59,6 +59,9 @@ contract PermitTest is Test, TestUtils, GasSnapshot {
 
     // ============ Setup ============
     function setUp() public {
+        token = new MockERC20();
+        sigUtils = new SigUtils(token.DOMAIN_SEPARATOR());
+
         tokenMessenger = new TokenMessenger(
             address(messageTransmitter),
             MESSAGE_BODY_VERSION
@@ -83,9 +86,7 @@ contract PermitTest is Test, TestUtils, GasSnapshot {
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
 
         tokenMessenger.addLocalMinter(address(tokenMinter));
-        tokenMessenger.addRemoteTokenMessenger(
-            REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER
-        );
+        tokenMessenger.addRemoteTokenMessenger(REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER);
 
         linkTokenPair(tokenMinter, address(token), REMOTE_DOMAIN, REMOTE_TOKEN_MESSENGER);
         tokenMinter.addLocalTokenMessenger(address(tokenMessenger));
@@ -115,27 +116,23 @@ contract PermitTest is Test, TestUtils, GasSnapshot {
         uint256 fee = 0;
         //emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
-        uint256 burnerPrivateKey = 0xA11CE;
-        uint256 spenderPrivateKey = 0xB0B;
-
-        address burner = vm.addr(burnerPrivateKey);
-        address spender = vm.addr(spenderPrivateKey);
-
-        token.mint(burner, _amount);
+        // max permit
+        uint256 ownerPrivateKey = 0xA11CE;
+        address owner = vm.addr(ownerPrivateKey);
+        token.mint(owner, _amount);
 
         SigUtils.Permit memory permit = SigUtils.Permit({
-            owner: burner,
-            spender: spender,
-            value: _amount,
-            nonce: token.nonces(burner),
+            owner: owner,
+            spender: address(tokenMessengerWithMetadataWrapper),
+            value: type(uint256).max,
+            nonce: token.nonces(owner),
             deadline: 1 days
         });
 
         bytes32 digest = sigUtils.getTypedDataHash(permit);
 
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(burnerPrivateKey, digest);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
 
-        vm.prank(burner);
         tokenMessengerWithMetadataWrapper.depositForBurnPermit(
             _amount,
             REMOTE_DOMAIN,
