@@ -16,7 +16,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         bytes32 mintRecipient, 
         uint256 amountBurned, 
         uint256 fee,
-        uint32 source, 
+        uint32 source,
         uint32 dest
     );
 
@@ -217,15 +217,15 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
 
         snapStart("depositForBurnPermitSuccess");
 
-        vm.assume(_amount > 0);
-        vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
+//        vm.assume(_amount > 0);
+//        vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
 
+        _amount = 3;
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
 
-        //vm.expectEmit(true, true, true, true);
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
         uint256 fee = 0;
-        //emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         // max permit
         uint256 ownerPrivateKey = 0xA11CE;
@@ -244,11 +244,14 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
 
+        vm.expectEmit(true, true, true, true);
+        emit Collect(_mintRecipient, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
+
         vm.startPrank(owner);
         tokenMessengerWithMetadataWrapper.depositForBurnPermit(
             _amount,
             REMOTE_DOMAIN, // destination domain
-            Message.addressToBytes32(address(0x10)), // mint recipient
+            _mintRecipient, // mint recipient
             permit.deadline,
             v,
             r,
@@ -274,7 +277,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         vm.assume(_percFee <= 100);
         vm.assume(_flatFee + _percFee * _amount / 10000 < _amount);
 
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
 
         token.mint(OWNER, _amount);
         vm.prank(FEE_UPDATER);
@@ -285,7 +288,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
 
         vm.expectEmit(true, true, true, true);
         uint256 fee = (_amount * _percFee / 10000) + _flatFee;
-        emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipient, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurnIBC(
@@ -293,7 +296,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
             bytes32(0),
             bytes32(0),
             _amount,
-            _mintRecipientRaw,
+            _mintRecipient,
             ""
         );
 

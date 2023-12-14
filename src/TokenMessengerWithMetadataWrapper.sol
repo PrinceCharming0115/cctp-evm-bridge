@@ -124,6 +124,15 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
     }
 
+    /**
+     * @notice Wrapper function for TokenMessenger.depositForBurn().
+     * Supports EIP-20 approvals via EIP-712 secp256k1 signatures
+     * Can specify any destination domain, including invalid ones.
+     *
+     * @param amount - the burn amount
+     * @param destinationDomain - domain id the funds will be minted on
+     * @param mintRecipient - address receiving minted tokens on destination domain
+     */
     function depositForBurnPermit(
         uint256 amount,
         uint32 destinationDomain,
