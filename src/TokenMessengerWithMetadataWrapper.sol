@@ -24,6 +24,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         uint32 source,
         uint32 dest
     );
+    event Debug(address debug);
     
     // ============ Errors ============
     error TokenMessengerNotSet();
@@ -96,27 +97,29 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
 
     // ============ External Functions ============
     /**
-     * @notice Wrapper function for TokenMessenger.depositForBurn() and .depositForBurnWithCaller()
-     * If destinationCaller is empty, call "depositForBurnWithCaller", otherwise call "depositForBurn".
-     * Can specify any destination domain, including invalid ones.  Only for USDC.
+     * @notice Wrapper function for TokenMessenger.depositForBurn()
+     * Can specify any destination domain, including invalid ones.
      *
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
      * @param mintRecipient - address receiving minted tokens on destination domain
-     * @param destinationCaller - address allowed to mint on destination chain
      */
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
-        bytes32 mintRecipient,
-        bytes32 destinationCaller
+        bytes32 mintRecipient
     ) external {
         // collect fee
         (uint256 fee, uint256 remainder) = calculateFee(amount, destinationDomain);
         IERC20 token = IERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
-        _depositForBurn(remainder, destinationDomain, mintRecipient, destinationCaller);
+        tokenMessenger.depositForBurn(
+            remainder,
+            destinationDomain,
+            mintRecipient,
+            tokenAddress
+        );
 
         emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
     }
@@ -125,7 +128,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        bytes32 destinationCaller,
         uint256 deadline,
         uint8 v,
         bytes32 r,
@@ -137,33 +139,14 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         token.permit(msg.sender, address(this), amount, deadline, v, r, s);
         token.transferFrom(msg.sender, address(this), amount);
 
-        _depositForBurn(remainder, destinationDomain, mintRecipient, destinationCaller);
+        tokenMessenger.depositForBurn(
+            remainder,
+            destinationDomain,
+            mintRecipient,
+            tokenAddress
+        );
 
         emit Collect(mintRecipient, remainder, fee, currentDomainId, destinationDomain);
-    }
-
-    function _depositForBurn(
-        uint256 amount,
-        uint32 destinationDomain,
-        bytes32 mintRecipient,
-        bytes32 destinationCaller
-    ) private {
-        if (destinationCaller == bytes32(0)) {
-            tokenMessenger.depositForBurn(
-                amount,
-                destinationDomain,
-                mintRecipient,
-                tokenAddress
-            );
-        } else {
-            tokenMessenger.depositForBurnWithCaller(
-                amount,
-                destinationDomain,
-                mintRecipient,
-                tokenAddress,
-                destinationCaller
-            );
-        }
     }
 
     /**
@@ -183,7 +166,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         bytes32 destinationRecipient,
         uint256 amount,
         bytes32 mintRecipient,
-        bytes32 destinationCaller,
         bytes calldata memo
     ) external {
         // collect fee
@@ -192,28 +174,15 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         IERC20 token = IERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
-        if (destinationCaller == bytes32(0)) {
-            tokenMessengerWithMetadata.depositForBurn(
-                channel,
-                destinationBech32Prefix,
-                destinationRecipient,
-                remainder,
-                mintRecipient,
-                tokenAddress,
-                memo
-            );
-        } else {
-            tokenMessengerWithMetadata.depositForBurnWithCaller(
-                channel,
-                destinationBech32Prefix,
-                destinationRecipient,
-                remainder,
-                mintRecipient,
-                tokenAddress,
-                destinationCaller,
-                memo
-            );
-        }
+        tokenMessengerWithMetadata.depositForBurn(
+            channel,
+            destinationBech32Prefix,
+            destinationRecipient,
+            remainder,
+            mintRecipient,
+            tokenAddress,
+            memo
+        );
 
         emit Collect(mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
     }

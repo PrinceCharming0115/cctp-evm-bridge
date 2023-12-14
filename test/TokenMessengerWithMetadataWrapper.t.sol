@@ -7,6 +7,8 @@ import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/test/TestUtils.sol";
 import "../src/TokenMessengerWithMetadataWrapper.sol";
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
+import {MockERC20} from "./utils/MockERC20.sol";
+import {SigUtils} from "./utils/SigUtils.sol";
 
 contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
     // ============ Events ============
@@ -40,7 +42,9 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
     address public constant TOKEN_ADDRESS = address(0x4);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;
-    MockMintBurnToken public token = new MockMintBurnToken();
+    MockERC20 public token;
+    SigUtils public sigUtils;
+
     TokenMinter public tokenMinter = new TokenMinter(tokenController);
 
     MessageTransmitter public messageTransmitter = new MessageTransmitter(
@@ -56,6 +60,9 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
 
     // ============ Setup ============
     function setUp() public {
+        token = new MockERC20();
+        sigUtils = new SigUtils(token.DOMAIN_SEPARATOR());
+
         tokenMessenger = new TokenMessenger(
             address(messageTransmitter),
             MESSAGE_BODY_VERSION
@@ -134,8 +141,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             55,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipientRaw
         );
     }
 
@@ -161,16 +167,15 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipientRaw
         );
     }
 
     // depositForBurn
     function testDepositForBurnSuccess(
         uint256 _amount,
-        uint16 _percFee,
-        uint64 _flatFee
+        uint64 _flatFee,
+        uint16 _percFee
     ) public {
 
         snapStart("depositForBurnSuccess");
@@ -198,8 +203,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipientRaw
         );
 
         assertEq(0, token.balanceOf(OWNER));
@@ -208,42 +212,54 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         snapEnd();
     }
 
-    // depositForBurn with caller
-    function testDepositForBurnWithCallerSuccess(
-        uint256 _amount,
-        uint16 _percFee,
-        uint64 _flatFee
-    ) public {
+    // depositForBurnPermit
+    function testDepositForBurnPermitSuccess(uint256 _amount) public {
+
+        snapStart("depositForBurnPermitSuccess");
 
         vm.assume(_amount > 0);
         vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
-        vm.assume(_percFee > 0);
-        vm.assume(_percFee <= 100);
-        vm.assume(_flatFee + _percFee * _amount / 10000 < _amount);
 
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
-
-        token.mint(OWNER, _amount);
         vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, _percFee, _flatFee);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
 
-        vm.prank(OWNER);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+        //vm.expectEmit(true, true, true, true);
+        uint256 fee = 0;
+        //emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
-        vm.expectEmit(true, true, true, true);
-        uint256 fee = (_amount * _percFee / 10000) + _flatFee;
-        emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        // max permit
+        uint256 ownerPrivateKey = 0xA11CE;
+        address owner = vm.addr(ownerPrivateKey); // 0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7
+        token.mint(owner, _amount);
 
-        vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.depositForBurn(
+        SigUtils.Permit memory permit = SigUtils.Permit({
+            owner: owner,
+            spender: address(tokenMessengerWithMetadataWrapper),
+            value: _amount,
+            nonce: token.nonces(owner),
+            deadline: 1 days
+        });
+
+        bytes32 digest = sigUtils.getTypedDataHash(permit);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+
+        vm.startPrank(owner);
+        tokenMessengerWithMetadataWrapper.depositForBurnPermit(
             _amount,
-            REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            0x0000000000000000000000000000000000000000000000000000000000000001
+            REMOTE_DOMAIN, // destination domain
+            Message.addressToBytes32(address(0x10)), // mint recipient
+            permit.deadline,
+            v,
+            r,
+            s
         );
+        vm.stopPrank();
 
-        assertEq(0, token.balanceOf(OWNER));
+        assertEq(0, token.balanceOf(owner));
         assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+
+        snapEnd();
     }
 
     // depositForBurnIBC
@@ -278,7 +294,6 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
             bytes32(0),
             _amount,
             _mintRecipientRaw,
-            bytes32(0),
             ""
         );
 
