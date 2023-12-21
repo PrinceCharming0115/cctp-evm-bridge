@@ -89,7 +89,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         feeUpdater = _feeUpdater;
         tokenAddress = _tokenAddress;
 
-        IERC20 token = IERC20(tokenAddress);
+        ERC20 token = ERC20(tokenAddress);
         token.approve(_tokenMessenger, type(uint256).max);
         token.approve(_tokenMessengerWithMetadata, type(uint256).max);
     }
@@ -110,7 +110,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     ) external {
         // collect fee
         (uint256 fee, uint256 remainder) = calculateFee(amount, destinationDomain);
-        IERC20 token = IERC20(tokenAddress);
+        ERC20 token = ERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
         tokenMessenger.depositForBurn(
@@ -131,6 +131,8 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @param amount - the burn amount
      * @param destinationDomain - domain id the funds will be minted on
      * @param mintRecipient - address receiving minted tokens on destination domain
+     * @param deadline - a timestamp after which the signature is invalid
+     * @param v, r, s - components of the EIP-712 signature that proves the owner’s consent
      */
     function depositForBurnPermit(
         uint256 amount,
@@ -143,9 +145,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     ) external {
         // collect fee
         (uint256 fee, uint256 remainder) = calculateFee(amount, destinationDomain);
-        ERC20 token = ERC20(tokenAddress);
-        token.permit(msg.sender, address(this), amount, deadline, v, r, s);
-        token.transferFrom(msg.sender, address(this), amount);
+        _transferAndPermit(amount, deadline, v, r, s);
 
         tokenMessenger.depositForBurn(
             remainder,
@@ -179,7 +179,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         // collect fee
         (uint256 fee, uint256 remainder) = calculateFee(amount, nobleDomainId);
 
-        IERC20 token = IERC20(tokenAddress);
+        ERC20 token = ERC20(tokenAddress);
         token.transferFrom(msg.sender, address(this), amount);
 
         tokenMessengerWithMetadata.depositForBurn(
@@ -193,6 +193,63 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         );
 
         emit Collect(mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
+    }
+
+    /**
+     * @notice Wrapper function for "depositForBurn" that includes metadata.
+     * Only for minting to Noble (destination domain is hardcoded).
+     * Supports EIP-20 approvals via EIP-712 secp256k1 signatures
+     * Can specify any destination domain, including invalid ones.
+     *
+     * @param channel channel id to be used when ibc forwarding
+     * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
+     * @param destinationRecipient address of recipient once ibc forwarded
+     * @param amount amount of tokens to burn
+     * @param mintRecipient address of mint recipient on destination domain
+     * @param memo arbitrary memo to be included when ibc forwarding
+     * @param deadline - a timestamp after which the signature is invalid
+     * @param v, r, s - components of the EIP-712 signature that proves the owner’s consent
+     */
+    function depositForBurnIBCPermit(
+        uint64 channel,
+        bytes32 destinationBech32Prefix,
+        bytes32 destinationRecipient,
+        uint256 amount,
+        bytes32 mintRecipient,
+        bytes calldata memo,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // collect fee
+        (uint256 fee, uint256 remainder) = calculateFee(amount, nobleDomainId);
+
+        _transferAndPermit(amount, deadline, v, r, s);
+
+        tokenMessengerWithMetadata.depositForBurn(
+            channel,
+            destinationBech32Prefix,
+            destinationRecipient,
+            remainder,
+            mintRecipient,
+            tokenAddress,
+            memo
+        );
+
+        emit Collect(mintRecipient, remainder, fee, currentDomainId, nobleDomainId);
+    }
+
+    function _transferAndPermit(
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) private {
+        ERC20 token = ERC20(tokenAddress);
+        token.permit(msg.sender, address(this), amount, deadline, v, r, s);
+        token.transferFrom(msg.sender, address(this), amount);
     }
 
     function updateTokenMessengerWithMetadata(address newTokenMessengerWithMetadata) external onlyOwner {

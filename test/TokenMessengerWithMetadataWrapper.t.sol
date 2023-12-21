@@ -305,6 +305,60 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
     }
 
+    // depositForBurnIBCPermit
+    function testDepositForBurnIBCPermitSuccess() public {
+
+        snapStart("depositForBurnIBCPermitSuccess");
+
+        uint16 _percFee = 0;
+        uint64 _flatFee = 2;
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
+
+        vm.prank(FEE_UPDATER);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, _percFee, _flatFee);
+
+        // max permit
+        uint256 ownerPrivateKey = 0xA11CE;
+        address owner = vm.addr(ownerPrivateKey); // 0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7
+        token.mint(owner, 55);
+
+        SigUtils.Permit memory permit = SigUtils.Permit({
+            owner: owner,
+            spender: address(tokenMessengerWithMetadataWrapper),
+            value: 55,
+            nonce: token.nonces(owner),
+            deadline: 1 days
+        });
+
+        bytes32 digest = sigUtils.getTypedDataHash(permit);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+
+        uint256 feeCollected = (_percFee * 55 / 10000) + _flatFee;
+        vm.expectEmit(true, true, true, true);
+        emit Collect(_mintRecipient, 55 - feeCollected, feeCollected, LOCAL_DOMAIN, REMOTE_DOMAIN);
+
+        vm.startPrank(owner);
+        tokenMessengerWithMetadataWrapper.depositForBurnIBCPermit(
+            uint64(0),
+            bytes32(0),
+            bytes32(0),
+            55,
+            _mintRecipient,
+            "",
+            permit.deadline,
+            v,
+            r,
+            s
+        );
+        vm.stopPrank();
+
+        assertEq(0, token.balanceOf(owner));
+        assertEq(feeCollected, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+
+        snapEnd();
+    }
+
     function testNotFeeUpdater() public {
         vm.expectRevert(Unauthorized.selector);
         vm.prank(OWNER);

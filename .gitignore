@@ -17,6 +17,6 @@ docs/
 
 .vscode/
 
-deployments.md
+admin/deployments.md
 
 admin/
