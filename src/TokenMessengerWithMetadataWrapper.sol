@@ -199,7 +199,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
      * @notice Wrapper function for "depositForBurn" that includes metadata.
      * Only for minting to Noble (destination domain is hardcoded).
      * Supports EIP-20 approvals via EIP-712 secp256k1 signatures
-     * Can specify any destination domain, including invalid ones.
      *
      * @param channel channel id to be used when ibc forwarding
      * @param destinationBech32Prefix bech32 prefix used for address encoding once ibc forwarded
@@ -224,7 +223,6 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     ) external {
         // collect fee
         (uint256 fee, uint256 remainder) = calculateFee(amount, nobleDomainId);
-
         _transferAndPermit(amount, deadline, v, r, s);
 
         tokenMessengerWithMetadata.depositForBurn(
@@ -253,7 +251,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
     }
 
     function updateTokenMessengerWithMetadata(address newTokenMessengerWithMetadata) external onlyOwner {
-        IERC20 token = IERC20(tokenAddress);
+        ERC20 token = ERC20(tokenAddress);
         token.approve(address(tokenMessengerWithMetadata), 0);
 
         tokenMessengerWithMetadata = TokenMessengerWithMetadata(newTokenMessengerWithMetadata);
@@ -303,8 +301,8 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         if (msg.sender != collector) {
             revert Unauthorized();
         }
-        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
-        IERC20 token = IERC20(tokenAddress);
+        uint256 balance = ERC20(tokenAddress).balanceOf(address(this));
+        ERC20 token = ERC20(tokenAddress);
         token.transfer(collector, balance);
     }
 }
