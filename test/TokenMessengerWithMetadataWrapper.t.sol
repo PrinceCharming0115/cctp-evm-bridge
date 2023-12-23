@@ -6,33 +6,18 @@ import "evm-cctp-contracts/src/messages/BurnMessage.sol";
 import "evm-cctp-contracts/src/MessageTransmitter.sol";
 import "evm-cctp-contracts/test/TestUtils.sol";
 import "../src/TokenMessengerWithMetadataWrapper.sol";
+import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
+import {MockERC20} from "./utils/MockERC20.sol";
+import {SigUtils} from "./utils/SigUtils.sol";
 
-contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
+contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
     // ============ Events ============
     event Collect(
         bytes32 mintRecipient, 
         uint256 amountBurned, 
         uint256 fee,
-        uint32 source, 
-        uint32 dest
-    );
-
-    event FastTransfer(
-        bytes32 mintRecipient,
-        uint256 amount,
         uint32 source,
         uint32 dest
-    );
-
-    event FastTransferIBC(
-        bytes32 mintRecipient,
-        uint256 amount,
-        uint32 source,
-        uint32 dest,
-        uint64 channel,
-        bytes32 destinationBech32Prefix,
-        bytes32 destRecipient,
-        bytes memo
     );
 
     // ============ Errors ============
@@ -54,10 +39,12 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
     address public constant OWNER = address(0x1);
     address public constant COLLECTOR = address(0x2);
     address public constant FEE_UPDATER = address(0x3);
-    address public constant USDC_ADDRESS = address(0x4);
+    address public constant TOKEN_ADDRESS = address(0x4);
 
     uint32 public constant ALLOWED_BURN_AMOUNT = 42000000;
-    MockMintBurnToken public token = new MockMintBurnToken();
+    MockERC20 public token;
+    SigUtils public sigUtils;
+
     TokenMinter public tokenMinter = new TokenMinter(tokenController);
 
     MessageTransmitter public messageTransmitter = new MessageTransmitter(
@@ -73,6 +60,9 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
     // ============ Setup ============
     function setUp() public {
+        token = new MockERC20();
+        sigUtils = new SigUtils(token.DOMAIN_SEPARATOR());
+
         tokenMessenger = new TokenMessenger(
             address(messageTransmitter),
             MESSAGE_BODY_VERSION
@@ -120,19 +110,17 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             LOCAL_DOMAIN,
             COLLECTOR,
             FEE_UPDATER,
-            USDC_ADDRESS
+            TOKEN_ADDRESS
         );
     }
 
     // depositForBurn - no fee set
     function testDepositForBurnFeeNotFound(
-        uint256 _amount,
-        address _mintRecipient
+        uint256 _amount
     ) public {
         _amount = 4;
 
-        vm.assume(_mintRecipient != address(0));
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
 
         token.mint(OWNER, _amount);
         vm.prank(FEE_UPDATER);
@@ -151,8 +139,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             55,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipient
         );
     }
 
@@ -178,17 +165,18 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipientRaw
         );
     }
 
     // depositForBurn
     function testDepositForBurnSuccess(
         uint256 _amount,
-        uint16 _percFee,
-        uint64 _flatFee
+        uint64 _flatFee,
+        uint16 _percFee
     ) public {
+
+        snapStart("depositForBurnSuccess");
 
         vm.assume(_amount > 0);
         vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
@@ -213,50 +201,69 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         tokenMessengerWithMetadataWrapper.depositForBurn(
             _amount,
             REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            bytes32(0)
+            _mintRecipientRaw
         );
 
         assertEq(0, token.balanceOf(OWNER));
         assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+
+        snapEnd();
     }
 
-    // depositForBurn with caller
-    function testDepositForBurnWithCallerSuccess(
-        uint256 _amount,
-        uint16 _percFee,
-        uint64 _flatFee
+    // depositForBurnPermit
+    function testDepositForBurnPermitSuccess(
+        uint256 _amount
     ) public {
 
-        vm.assume(_amount > 0);
+        snapStart("depositForBurnPermitSuccess");
+
+        vm.assume(_amount > 5);
         vm.assume(_amount <= ALLOWED_BURN_AMOUNT);
-        vm.assume(_percFee > 0);
-        vm.assume(_percFee <= 100);
-        vm.assume(_flatFee + _percFee * _amount / 10000 < _amount);
 
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
+        uint16 _percFee = 1;
+        uint64 _flatFee = 0;
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
 
-        token.mint(OWNER, _amount);
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, _percFee, _flatFee);
 
-        vm.prank(OWNER);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+        // max permit
+        uint256 ownerPrivateKey = 0xA11CE;
+        address owner = vm.addr(ownerPrivateKey); // 0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7
+        token.mint(owner, _amount);
 
+        SigUtils.Permit memory permit = SigUtils.Permit({
+            owner: owner,
+            spender: address(tokenMessengerWithMetadataWrapper),
+            value: type(uint256).max,
+            nonce: token.nonces(owner),
+            deadline: 1 days
+        });
+
+        bytes32 digest = sigUtils.getTypedDataHash(permit);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+
+        uint256 feeCollected = (_percFee * _amount / 10000) + _flatFee;
         vm.expectEmit(true, true, true, true);
-        uint256 fee = (_amount * _percFee / 10000) + _flatFee;
-        emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipient, _amount - feeCollected, feeCollected, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
-        vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.depositForBurn(
+        vm.startPrank(owner);
+        tokenMessengerWithMetadataWrapper.depositForBurnPermit(
             _amount,
             REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            0x0000000000000000000000000000000000000000000000000000000000000001
+            _mintRecipient,
+            permit.deadline,
+            v,
+            r,
+            s
         );
+        vm.stopPrank();
 
-        assertEq(0, token.balanceOf(OWNER));
-        assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+        assertEq(0, token.balanceOf(owner));
+        assertEq(feeCollected, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+
+        snapEnd();
     }
 
     // depositForBurnIBC
@@ -271,7 +278,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         vm.assume(_percFee <= 100);
         vm.assume(_flatFee + _percFee * _amount / 10000 < _amount);
 
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
 
         token.mint(OWNER, _amount);
         vm.prank(FEE_UPDATER);
@@ -282,7 +289,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
 
         vm.expectEmit(true, true, true, true);
         uint256 fee = (_amount * _percFee / 10000) + _flatFee;
-        emit Collect(_mintRecipientRaw, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipient, _amount - fee, fee, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
         vm.prank(OWNER);
         tokenMessengerWithMetadataWrapper.depositForBurnIBC(
@@ -290,8 +297,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
             bytes32(0),
             bytes32(0),
             _amount,
-            _mintRecipientRaw,
-            bytes32(0),
+            _mintRecipient,
             ""
         );
 
@@ -299,65 +305,58 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         assertEq(fee, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
     }
 
-    // fastTransfer
-    function fastTransferSuccess(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > 0);
+    // depositForBurnIBCPermit
+    function testDepositForBurnIBCPermitSuccess() public {
 
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
+        snapStart("depositForBurnIBCPermitSuccess");
 
-        token.mint(OWNER, _amount);
+        uint16 _percFee = 0;
+        uint64 _flatFee = 2;
+        bytes32 _mintRecipient = Message.addressToBytes32(address(0x10));
+
         vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
+        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, _percFee, _flatFee);
 
-        vm.prank(OWNER);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
+        // max permit
+        uint256 ownerPrivateKey = 0xA11CE;
+        address owner = vm.addr(ownerPrivateKey); // 0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7
+        token.mint(owner, 55);
 
+        SigUtils.Permit memory permit = SigUtils.Permit({
+            owner: owner,
+            spender: address(tokenMessengerWithMetadataWrapper),
+            value: type(uint256).max,
+            nonce: token.nonces(owner),
+            deadline: 1 days
+        });
+
+        bytes32 digest = sigUtils.getTypedDataHash(permit);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+
+        uint256 feeCollected = (_percFee * 55 / 10000) + _flatFee;
         vm.expectEmit(true, true, true, true);
-        emit FastTransfer(_mintRecipientRaw, _amount, LOCAL_DOMAIN, REMOTE_DOMAIN);
+        emit Collect(_mintRecipient, 55 - feeCollected, feeCollected, LOCAL_DOMAIN, REMOTE_DOMAIN);
 
-        vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.fastTransfer(
-            _amount,
-            REMOTE_DOMAIN,
-            _mintRecipientRaw
+        vm.startPrank(owner);
+        tokenMessengerWithMetadataWrapper.depositForBurnIBCPermit(
+            uint64(0),
+            bytes32(0),
+            bytes32(0),
+            55,
+            _mintRecipient,
+            "",
+            permit.deadline,
+            v,
+            r,
+            s
         );
+        vm.stopPrank();
 
-        assertEq(0, token.balanceOf(OWNER));
-        assertEq(_amount, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
-    }
+        assertEq(0, token.balanceOf(owner));
+        assertEq(feeCollected, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
 
-    // fastTransferIBC
-    function fastTransferIBCSuccess(
-        uint256 _amount
-    ) public {
-        vm.assume(_amount > 0);
-
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(address(0x10));
-
-        token.mint(OWNER, _amount);
-        vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 0, 0);
-
-        vm.prank(OWNER);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
-
-        vm.expectEmit(true, true, true, true);
-        emit FastTransfer(_mintRecipientRaw, _amount, LOCAL_DOMAIN, REMOTE_DOMAIN);
-
-        vm.prank(OWNER);
-        tokenMessengerWithMetadataWrapper.fastTransferIBC(
-            _amount, 
-            _mintRecipientRaw, 
-            uint64(0), 
-            bytes32(0), 
-            bytes32(0), 
-            ""
-        );
-
-        assertEq(0, token.balanceOf(OWNER));
-        assertEq(_amount, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
+        snapEnd();
     }
 
     function testNotFeeUpdater() public {
@@ -391,154 +390,5 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils {
         vm.prank(FEE_UPDATER);
         tokenMessengerWithMetadataWrapper.setFee(3, 1, 15);
         assertEq(0, token.balanceOf(address(tokenMessengerWithMetadataWrapper)));
-    }
-
-    // fastTransfer
-    function testFastTransferHappyPath(
-        address _mintRecipient
-    ) public {
-
-        uint256 _amount = 20000;
-
-        vm.assume(_mintRecipient != address(0));
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
-
-        token.mint(owner, _amount);
-        vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
-
-        tokenMessengerWithMetadataWrapper.allowToken(address(token));
-
-        vm.prank(owner);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
-
-        vm.expectEmit(true, true, true, true);
-        emit FastTransfer(_amount, REMOTE_DOMAIN, _mintRecipientRaw, address(token), 0);
-
-        vm.prank(owner);
-        tokenMessengerWithMetadataWrapper.fastTransfer(
-            _amount,
-            REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            address(token)
-        );
-
-        assertEq(0, token.balanceOf(owner));
-        assertEq(20000, token.balanceOf(COLLECTOR));
-    }
-
-    // fastTransfer -> fail with weird token
-    function testFastTransferDisallowedToken(
-        address _mintRecipient
-    ) public {
-
-        uint256 _amount = 20000;
-
-        vm.assume(_mintRecipient != address(0));
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
-
-        token.mint(owner, _amount);
-        vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
-
-        vm.prank(owner);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
-
-        vm.expectRevert("Token is not supported");
-
-        vm.prank(owner);
-        tokenMessengerWithMetadataWrapper.fastTransfer(
-            _amount,
-            REMOTE_DOMAIN,
-            _mintRecipientRaw,
-            address(token)
-        );
-    }
-
-    // fastTransferIBC
-    function testFastTransferIBCHappyPath(
-        address _mintRecipient
-    ) public {
-
-        uint256 _amount = 20000;
-        uint64 _channel = 3;
-        bytes32 _destinationBech32Prefix = bytes32(0);
-        bytes32 _destRecipient = bytes32(0);
-        bytes memory _memo = "";
-
-        vm.assume(_mintRecipient != address(0));
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
-
-        token.mint(owner, _amount);
-        vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
-
-        tokenMessengerWithMetadataWrapper.allowToken(address(token));
-
-        vm.prank(owner);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
-
-        vm.expectEmit(true, true, true, true);
-        emit FastTransferIBC(
-            _amount, 
-            REMOTE_DOMAIN,
-            _mintRecipientRaw, 
-            address(token), 
-            0,
-            _channel,
-            _destinationBech32Prefix,
-            _destRecipient,
-            _memo
-        );
-
-        vm.prank(owner);
-        tokenMessengerWithMetadataWrapper.fastTransferIBC(
-            _amount,
-            _mintRecipientRaw,
-            address(token),
-            _channel,
-            _destinationBech32Prefix,
-            _destRecipient,
-            _memo
-        );
-
-        assertEq(0, token.balanceOf(owner));
-        assertEq(20000, token.balanceOf(COLLECTOR));
-    }
-
-    // fastTransferIBC
-    function testFastTransferIBCDisallowedToken(
-        address _mintRecipient
-    ) public {
-
-        uint256 _amount = 20000;
-        uint64 _channel = 3;
-        bytes32 _destinationBech32Prefix = bytes32(0);
-        bytes32 _destRecipient = bytes32(0);
-        bytes memory _memo = "";
-
-        vm.assume(_mintRecipient != address(0));
-        bytes32 _mintRecipientRaw = Message.addressToBytes32(_mintRecipient);
-
-        token.mint(owner, _amount);
-        vm.prank(FEE_UPDATER);
-        tokenMessengerWithMetadataWrapper.setFee(REMOTE_DOMAIN, 10, 0); // 10 bips or 0.1%
-
-        vm.prank(owner);
-        token.approve(address(tokenMessengerWithMetadataWrapper), _amount);
-
-        vm.expectRevert("Token is not supported");
-
-        vm.prank(owner);
-        tokenMessengerWithMetadataWrapper.fastTransferIBC(
-            _amount,
-            _mintRecipientRaw,
-            address(token),
-            _channel,
-            _destinationBech32Prefix,
-            _destRecipient,
-            _memo
-        );
-
     }
 }
