@@ -235,7 +235,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         SigUtils.Permit memory permit = SigUtils.Permit({
             owner: owner,
             spender: address(tokenMessengerWithMetadataWrapper),
-            value: _amount,
+            value: type(uint256).max,
             nonce: token.nonces(owner),
             deadline: 1 days
         });
@@ -325,7 +325,7 @@ contract TokenMessengerWithMetadataWrapperTest is Test, TestUtils, GasSnapshot {
         SigUtils.Permit memory permit = SigUtils.Permit({
             owner: owner,
             spender: address(tokenMessengerWithMetadataWrapper),
-            value: 55,
+            value: type(uint256).max,
             nonce: token.nonces(owner),
             deadline: 1 days
         });
