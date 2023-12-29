@@ -10,6 +10,28 @@ Test
 forge test --use 0.8.22 --evm-version paris --extra-output abi
 ```
 
+## Mainnet Deployments
+```
+Ethereum Goerli
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+Avalanche
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+Arbitrum
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+Optimism
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+Base
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+Polygon
+0x61Ea1a3359e2A5282BF91419Be4C667f15Af68d8
+
+```
+
 ## Testnet Deployments
 ```
 Ethereum Goerli
@@ -26,9 +48,6 @@ Optimism Goerli
 
 Base Goerli
 0x9ddD1BdfF41a9Fd9682821963cA21E6Ebae91792
-
-Solana devnet
-TODO
 
 Polygon Mumbai
 0x9ddD1BdfF41a9Fd9682821963cA21E6Ebae91792
