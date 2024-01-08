@@ -246,7 +246,7 @@ contract TokenMessengerWithMetadataWrapper is Owned(msg.sender) {
         bytes32 s
     ) private {
         ERC20 token = ERC20(tokenAddress);
-        token.permit(msg.sender, address(this), type(uint256).max, deadline, v, r, s);
+        token.permit(msg.sender, address(this), amount, deadline, v, r, s);
         token.transferFrom(msg.sender, address(this), amount);
     }
 
