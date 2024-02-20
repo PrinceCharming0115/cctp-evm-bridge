@@ -1,0 +1,8 @@
+cache/
+node_modules/
+out/
+*.DS_Store
+__pycache__/
+venv/
+broadcast/
+.env

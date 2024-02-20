@@ -1,0 +1,10 @@
+{
+  "name": "evm-cctp-contracts",
+  "license": "Apache-2.0",
+  "scripts": {
+    "lint": "solhint '**/*.sol'"
+  },
+  "devDependencies": {
+    "solhint": "^3.3.7"
+  }
+}
